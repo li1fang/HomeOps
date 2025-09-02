@@ -1,0 +1,34 @@
+- name: Bootstrap Windows nodes (OpenSSH + to-linux.ps1)
+  hosts: whipx
+  gather_facts: false
+  vars:
+    ps: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
+
+  tasks:
+    - name: Ensure C:\ops exists
+      ansible.builtin.shell: 'powershell -NoProfile -Command "New-Item -ItemType Directory -Path C:\ops -Force | Out-Null"'
+
+    - name: Deploy to-linux.ps1
+      ansible.builtin.copy:
+        dest: "C:\\ops\\to-linux.ps1"
+        content: |
+{{ '\n'.join(['          ' + line for line in open('/mnt/data/homeops-ansible-final/templates/to-linux.ps1.j2').read().splitlines()]) }}
+        mode: '0644'
+
+    - name: Enable and start OpenSSH Server
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+          if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+            Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null
+          }
+          Set-Service -Name sshd -StartupType Automatic
+          if ((Get-Service sshd).Status -ne 'Running') { Start-Service sshd }
+        "
+
+    - name: Ensure firewall rule for TCP 22 exists
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+          if (-not (Get-NetFirewallRule -DisplayName 'OpenSSH Server (TCP 22)' -ErrorAction SilentlyContinue)) {
+            New-NetFirewallRule -DisplayName 'OpenSSH Server (TCP 22)' -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Any | Out-Null
+          }
+        "

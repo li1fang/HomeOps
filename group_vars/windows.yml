@@ -1,0 +1,2 @@
+win_ssh_service: sshd
+ubuntu_description: "Ubuntu"

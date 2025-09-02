@@ -1,0 +1,13 @@
+- name: Linux ping
+  hosts: linux
+  gather_facts: false
+  tasks:
+    - name: ping
+      ansible.builtin.ping:
+
+- name: Windows ping (via SSH)
+  hosts: windows
+  gather_facts: false
+  tasks:
+    - name: whoami
+      ansible.builtin.command: whoami

@@ -1,0 +1,19 @@
+# to-linux.ps1  — set next boot to Ubuntu (one time), then reboot
+$fw = bcdedit /enum firmware
+# Try to find the GUID near the 'Ubuntu' description (case-insensitive)
+$idx = ($fw | Select-String -Pattern 'description\s+Ubuntu' -CaseSensitive:$false | Select-Object -First 1).LineNumber
+if (-not $idx) {
+  Write-Error "Cannot find 'Ubuntu' entry in firmware list"
+  exit 1
+}
+$guid = $null
+for ($i=$idx-1; $i -ge 0; $i--) {
+  if ($fw[$i] -match '\{[0-9a-fA-F\-]+\}') { $guid = $matches[0]; break }
+}
+if (-not $guid) {
+  Write-Error "Cannot extract GUID for Ubuntu"
+  exit 1
+}
+Write-Host "Boot once to: $guid"
+bcdedit /bootsequence $guid | Out-Host
+shutdown /r /t 0

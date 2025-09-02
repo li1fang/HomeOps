@@ -1,0 +1,7 @@
+ssh_services:
+  - ssh
+
+sunshine_autostart: true
+
+# 默认允许用 snap 的 tailscale（若机器未装 snap，本任务会被跳过）
+tailscale_snap: true

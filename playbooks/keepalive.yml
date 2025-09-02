@@ -1,0 +1,31 @@
+- name: Keepalive Linux services
+  hosts: whipz
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Ensure ssh is running
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Ensure tailscale snap running if present
+      ansible.builtin.shell: |
+        set -e
+        if command -v snap >/dev/null 2>&1 && snap list tailscale >/dev/null 2>&1; then
+          snap enable tailscale || true
+          snap start tailscale || true
+        fi
+      args: {executable: /bin/bash}
+      changed_when: false
+
+- name: Keepalive Windows services
+  hosts: whipx
+  gather_facts: false
+  tasks:
+    - name: Ensure sshd running
+      ansible.builtin.shell: |
+        powershell -NoProfile -Command "
+          Set-Service -Name sshd -StartupType Automatic
+          if ((Get-Service sshd).Status -ne 'Running') { Start-Service sshd }
+        "

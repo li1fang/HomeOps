@@ -1,0 +1,91 @@
+- name: Bootstrap Linux nodes (ssh, tailscale, to-windows)
+  hosts: whipz
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Ensure openssh-server installed/enabled
+      ansible.builtin.package:
+        name: openssh-server
+        state: present
+
+    - name: Enable and start sshd
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Ensure snap is present (optional)
+      ansible.builtin.package:
+        name: snapd
+        state: present
+      ignore_errors: true
+
+    - name: Enable and start tailscale (snap) if available
+      ansible.builtin.shell: |
+        set -e
+        if command -v snap >/dev/null 2>&1 && snap list tailscale >/dev/null 2>&1; then
+          snap enable tailscale || true
+          snap start tailscale || true
+        fi
+      args:
+        executable: /bin/bash
+      register: tailscale_snap_out
+      changed_when: false
+
+    - name: Create ops dir
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user }}/ops"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Deploy to-windows.sh
+      ansible.builtin.template:
+        src: templates/to-windows.sh.j2
+        dest: "/home/{{ ansible_user }}/ops/to-windows.sh"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Discover efibootmgr/reboot path
+      ansible.builtin.shell: |
+        set -e
+        E=$(command -v efibootmgr || echo /usr/bin/efibootmgr)
+        R=$(command -v reboot || echo /usr/sbin/reboot)
+        echo "$E $R"
+      args:
+        executable: /bin/bash
+      register: paths
+
+    - name: Set facts for sudoers
+      ansible.builtin.set_fact:
+        efibootmgr_path: "{{ paths.stdout.split()[0] | default('/usr/bin/efibootmgr') }}"
+        reboot_path: "{{ paths.stdout.split()[1] | default('/usr/sbin/reboot') }}"
+
+    - name: Install sudoers drop-in for nopasswd
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/homeheal-efiboot
+        content: |
+          {{ ansible_user }} ALL=(root) NOPASSWD: {{ efibootmgr_path }}, {{ reboot_path }}, /sbin/reboot, /usr/sbin/reboot
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "/usr/sbin/visudo -cf %s"
+
+    - name: Test sudo -n efibootmgr
+      ansible.builtin.shell: "sudo -n {{ efibootmgr_path }} -v | head -n1"
+      args:
+        executable: /bin/bash
+
+    - name: (Optional) Sunshine autostart for current user
+      become: false
+      ansible.builtin.shell: |
+        set -e
+        if command -v systemctl >/dev/null 2>&1; then
+          systemctl --user enable --now sunshine 2>/dev/null || true
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false

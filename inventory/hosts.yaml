@@ -1,0 +1,25 @@
+all:
+  children:
+    control:
+      hosts:
+        whipc:
+          ansible_host: 100.103.154.96
+          ansible_user: whipc
+    windows:
+      hosts:
+        whipx:
+          ansible_host: 100.81.77.26
+          ansible_user: Administrator
+          ansible_connection: ssh
+          ansible_shell_type: powershell
+          ansible_shell_executable: None
+          wol_mac: "9C:6B:00:05:B4:16"
+          wol_broadcast: "192.168.1.255"
+    linux:
+      hosts:
+        whipz:
+          ansible_host: 100.67.3.75
+          ansible_user: whipz
+        whipc:
+          ansible_host: 100.103.154.96
+          ansible_user: whipc

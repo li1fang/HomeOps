@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+EFIBOOTMGR="$(command -v efibootmgr)"
+REBOOTBIN="$(command -v reboot)"
+WIN="$($EFIBOOTMGR -v | awk -F '[:* ]+' '/Windows Boot Manager/{print $1; exit}' | sed 's/Boot//')"
+if [[ -z "$WIN" ]]; then
+  echo "找不到 Windows Boot Manager"
+  exit 1
+fi
+echo "BootNext=$WIN"
+sudo -n "$EFIBOOTMGR" -n "$WIN"
+sudo -n "$REBOOTBIN"

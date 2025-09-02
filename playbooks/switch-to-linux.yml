@@ -1,0 +1,35 @@
+- name: Windows → Linux (one-time boot to Ubuntu via bcdedit), orchestrated from control
+  hosts: control
+  gather_facts: false
+  vars:
+    win_host: whipx
+    linux_host: whipz
+    ps_file: 'C:\ops\to-linux.ps1'
+
+  tasks:
+    - name: Trigger to-linux.ps1 on Windows
+      ansible.builtin.shell: |
+        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"
+      delegate_to: "{{ win_host }}"
+      async: 30
+      poll: 0
+
+    - name: Wait for Windows SSH to drop
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[win_host].ansible_host }}"
+        port: 22
+        state: drained
+        timeout: 240
+      delegate_to: localhost
+
+    - name: Wait for Linux SSH to appear
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[linux_host].ansible_host }}"
+        port: 22
+        delay: 10
+        timeout: 600
+      delegate_to: localhost
+
+    - name: Confirm Linux reachable
+      ansible.builtin.ping:
+      delegate_to: "{{ linux_host }}"
