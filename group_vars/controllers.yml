@@ -1,0 +1,3 @@
+# group_vars/controllers.yml
+win_host: ws-01-win
+linux_host: ws-01-linux
