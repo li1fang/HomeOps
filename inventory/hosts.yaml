@@ -1,14 +1,14 @@
 all:
   children:
-    control:
+    controllers:
       hosts:
-        whipc:
+        ctrl-linux-01: # Original: whipc / ctrl_linux-01
           ansible_connection: local
           ansible_python_interpreter: /usr/bin/python3
 
-    windows:
+    workstations:
       hosts:
-        whipx:
+        ws-01-win: # Original: whip-x
           ansible_host: 100.81.77.26
           ansible_user: Administrator
           ansible_connection: ssh
@@ -16,12 +16,24 @@ all:
           ansible_shell_type: powershell
           ansible_shell_executable: None
 
-    linux:
-      hosts:
-        whipz:
+        ws-01-linux: # Original: whipz
           ansible_host: 100.67.3.75
           ansible_user: whipz
           ansible_connection: ssh
           ansible_port: 22
           ansible_become: true
           ansible_become_method: sudo
+        
+        ws-02-win: # Original: light
+          ansible_host: 100.121.147.30
+          ansible_user: garro
+          ansible_connection: ssh
+          ansible_port: 22
+          ansible_shell_type: powershell
+          ansible_shell_executable: None
+
+        ws-macos-01: # Original: whip-a
+          ansible_host: 100.110.14.46
+          ansible_user: whip_a
+          ansible_connection: ssh
+          ansible_port: 22
