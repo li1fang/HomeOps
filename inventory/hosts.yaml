@@ -32,7 +32,7 @@ all:
           ansible_shell_type: powershell
           ansible_shell_executable: None
 
-        ws-macos-01: # Original: whip-a
+        ws-03-macos: # Original: whip-a
           ansible_host: 100.110.14.46
           ansible_user: whip_a
           ansible_connection: ssh
