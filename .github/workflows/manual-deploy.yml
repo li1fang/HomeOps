@@ -7,5 +7,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: 1. Checkout code
         uses: actions/checkout@v4
+
+      - name: 2. Setup SSH Key for Ansible
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: 3. Install Tailscale and connect
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: 4. Install Ansible dependencies
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: 5. Run Ansible Ping Test on Linux Hosts
+        run: ansible -i inventory/hosts.yaml linux -m ansible.builtin.ping
