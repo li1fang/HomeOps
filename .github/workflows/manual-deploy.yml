@@ -5,8 +5,7 @@ on:
 
 jobs:
   deploy:
-    # 关键改动：告诉 GitHub 把任务发给我们的专属运行器
-    runs-on: self-hosted 
+    runs-on: self-hosted
     steps:
       - name: 1. Checkout code
         uses: actions/checkout@v4
@@ -16,10 +15,8 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       
-      # 第 3 步 (Tailscale) 已不再需要，可以直接删除！
-
       - name: 3. Install Ansible dependencies
         run: ansible-galaxy collection install -r requirements.yml
 
-      - name: 4. Run Ansible Ping Test on Linux Hosts
-        run: ansible -i inventory/hosts.yaml linux -m ansible.builtin.ping
+      - name: 4. Lock Kernel Version on ws-01-linux
+        run: ansible-playbook -i inventory/hosts.yaml playbooks/lock-kernel.yml -l ws-01-linux
