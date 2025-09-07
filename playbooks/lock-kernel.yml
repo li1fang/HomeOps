@@ -1,5 +1,5 @@
 - name: Lock kernel version on ws-01-linux
-  hosts: ws-01-linux
+  hosts: hosts: linux
   become: true
   gather_facts: true
 
