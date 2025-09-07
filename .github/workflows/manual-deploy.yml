@@ -27,5 +27,5 @@ jobs:
       - name: 6. Ping macOS Host
         run: ansible -i inventory/hosts.yaml macos -m ansible.builtin.ping
         
-      - name: 7. Ping Windows Hosts
-        run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
+      #- name: 7. Ping Windows Hosts
+        #run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
