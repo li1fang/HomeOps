@@ -79,6 +79,9 @@ make bootstrap-windows
 # 8) 双向切换演练
 make switch-linux     # Windows → Linux
 make switch-windows   # Linux → Windows
+
+# 9) 锁定 ws-01-linux 当前内核版本（防止自动升级）
+make lock-kernel
 ```
 
 > 如遇到等待时间不够，可按机器实际速度把 `switch-*.yml` 中 `timeout` 加大。
