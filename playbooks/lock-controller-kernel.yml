@@ -1,0 +1,32 @@
+- name: Lock kernel version on Linux Controller
+  hosts: controllers # <-- 确保这里是 controllers
+  become: true
+  gather_facts: true
+
+  tasks:
+    # ... (所有 tasks 内容和上面那个文件完全一样) ...
+    - name: Hold current kernel packages
+      ansible.builtin.shell: |
+        set -e
+        KERN="{{ ansible_kernel }}"
+        for pkg in linux-image-$KERN linux-headers-$KERN linux-modules-$KERN linux-modules-extra-$KERN; do
+          if dpkg -s "$pkg" >/dev/null 2>&1; then
+            apt-mark hold "$pkg"
+          fi
+        done
+      args:
+        executable: /bin/bash
+      register: hold_result
+      changed_when: "'set on hold' in hold_result.stdout"
+
+    - name: List held kernel packages
+      ansible.builtin.shell: |
+        apt-mark showhold | grep "linux-.*{{ ansible_kernel }}" || true
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: held_pkgs
+
+    - name: Display held kernel packages
+      ansible.builtin.debug:
+        msg: "Held packages: {{ held_pkgs.stdout_lines }}"
