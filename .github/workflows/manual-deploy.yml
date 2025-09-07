@@ -1,10 +1,10 @@
-name: Stabilize Linux Systems
+name: Stabilize and Test Systems
 
 on:
   workflow_dispatch:
 
 jobs:
-  stabilize:
+  run-ansible:
     runs-on: self-hosted
     steps:
       - name: 1. Checkout code
@@ -18,8 +18,11 @@ jobs:
       - name: 3. Install Ansible dependencies
         run: ansible-galaxy collection install -r requirements.yml
 
-      - name: 4. Lock Kernel Version on Linux Workstation
-        run: ansible-playbook -i inventory/hosts.yaml playbooks/lock-kernel.yml -l ws-01-linux
-
-      - name: 5. Lock Kernel Version on Linux Controller
+      - name: 4. Lock Kernel Version on Linux Controller
         run: ansible-playbook -i inventory/hosts.yaml playbooks/lock-controller-kernel.yml
+
+      - name: 5. Lock Kernel Version on Linux Workstation
+        run: ansible-playbook -i inventory/hosts.yaml playbooks/lock-kernel.yml -l ws-01-linux
+      
+      - name: 6. Run Ansible Ping Test on macOS Host
+        run: ansible -i inventory/hosts.yaml macos -m ansible.builtin.ping
