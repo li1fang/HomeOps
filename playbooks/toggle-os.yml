@@ -1,0 +1,28 @@
+- name: Smartly Toggle OS on ws-01
+  hosts: controllers
+  gather_facts: false
+  tasks:
+    - name: Probe ws-01-linux status
+      ansible.builtin.ping:
+      delegate_to: ws-01-linux
+      ignore_unreachable: true
+      register: linux_status
+
+    - name: Probe ws-01-win status
+      ansible.windows.win_ping:
+      delegate_to: ws-01-win
+      ignore_unreachable: true
+      register: windows_status
+
+    - name: Decide and Switch to Linux
+      ansible.builtin.import_playbook: switch-to-linux.yml
+      when: windows_status.unreachable is not true and linux_status.unreachable is true
+
+    - name: Decide and Switch to Windows
+      ansible.builtin.import_playbook: switch-to-windows.yml
+      when: linux_status.unreachable is not true and windows_status.unreachable is true
+
+    - name: Report if both systems are offline
+      ansible.builtin.fail:
+        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check the machine's power state."
+      when: linux_status.unreachable is true and windows_status.unreachable is true
