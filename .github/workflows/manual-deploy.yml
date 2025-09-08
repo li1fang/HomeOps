@@ -28,4 +28,4 @@ jobs:
         
       - name: 6. Health Check: Windows
         run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
-        ignore-errors: true # <-- 已修正：和 run: 对齐
+        ignore-errors: true
