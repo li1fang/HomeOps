@@ -1,19 +1,19 @@
 - name: Bootstrap Windows nodes (OpenSSH + to-linux.ps1)
-  hosts: whipx
+  hosts: windows
   gather_facts: false
-  vars:
-    ps: 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command'
 
   tasks:
     - name: Ensure C:\ops exists
-      ansible.builtin.shell: 'powershell -NoProfile -Command "New-Item -ItemType Directory -Path C:\ops -Force | Out-Null"'
+      ansible.windows.win_file:
+        path: C:\ops
+        state: directory
 
     - name: Deploy to-linux.ps1
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: templates/to-linux.ps1.j2
         dest: "C:\\ops\\to-linux.ps1"
-        content: |
-{{ '\n'.join(['          ' + line for line in open('/mnt/data/homeops-ansible-final/templates/to-linux.ps1.j2').read().splitlines()]) }}
         mode: '0644'
+        newline_sequence: "\r\n"
 
     - name: Enable and start OpenSSH Server
       ansible.builtin.shell: |
@@ -32,3 +32,4 @@
             New-NetFirewallRule -DisplayName 'OpenSSH Server (TCP 22)' -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Any | Out-Null
           }
         "
+
