@@ -1,5 +1,5 @@
 - name: Keepalive Linux services
-  hosts: whipz
+  hosts: linux
   become: true
   gather_facts: false
   tasks:
@@ -20,7 +20,7 @@
       changed_when: false
 
 - name: Keepalive Windows services
-  hosts: whipx
+  hosts: windows
   gather_facts: false
   tasks:
     - name: Ensure sshd running
