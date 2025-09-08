@@ -10,7 +10,7 @@
 
     - name: Deploy to-linux.ps1
       ansible.builtin.template:
-        src: templates/to-linux.ps1.j2
+        src: ../templates/to-linux.ps1.j2
         dest: "C:\\ops\\to-linux.ps1"
         mode: '0644'
         newline_sequence: "\r\n"
