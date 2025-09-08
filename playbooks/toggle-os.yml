@@ -15,11 +15,11 @@
       register: windows_status
 
     - name: Decide and Switch to Linux
-      ansible.builtin.import_playbook: switch-to-linux.yml
+      ansible.builtin.include_playbook: switch-to-linux.yml
       when: windows_status.unreachable is not true and linux_status.unreachable is true
 
     - name: Decide and Switch to Windows
-      ansible.builtin.import_playbook: switch-to-windows.yml
+      ansible.builtin.include_playbook: switch-to-windows.yml
       when: linux_status.unreachable is not true and windows_status.unreachable is true
 
     - name: Report if both systems are offline
