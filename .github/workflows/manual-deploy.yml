@@ -23,9 +23,9 @@ jobs:
           ansible-playbook -i inventory/hosts.yaml playbooks/lock-controller-kernel.yml
           ansible-playbook -i inventory/hosts.yaml playbooks/force-stable-kernel.yml
       
-      - name: 5. Health Check: Linux & macOS
+      - name: 5. Health Check:Linux&macOS
         run: ansible -i inventory/hosts.yaml linux,macos -m ansible.builtin.ping
         
-      - name: 6. Health Check: Windows
+      - name: 6. Health Check:Windows
         run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
         ignore-errors: true
