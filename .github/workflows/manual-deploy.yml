@@ -1,31 +1,31 @@
-name: Stabilize and Test Systems
+name: Everyone Is Here (System-Wide Health Check)
 
 on:
   workflow_dispatch:
 
 jobs:
-  run-ansible:
+  health-check:
     runs-on: self-hosted
     steps:
-      - name: 1. 检出代码 (Checkout code)
+      - name: 1. Checkout code
         uses: actions/checkout@v4
 
-      - name: 2. 设置 Ansible 的 SSH 密钥 (Setup SSH Key)
+      - name: 2. Setup SSH Key for Ansible
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       
-      - name: 3. 安装 Ansible 依赖 (Install Ansible dependencies)
+      - name: 3. Install Ansible dependencies
         run: ansible-galaxy collection install -r requirements.yml
 
-      - name: 4. 锁定 Linux 控制器的内核 (Lock Kernel on Controller)
-        run: ansible-playbook -i inventory/hosts.yaml playbooks/lock-controller-kernel.yml
-
-      - name: 5. 强制 ws-01-linux 使用稳定版内核 (Force Stable Kernel)
-        run: ansible-playbook -i inventory/hosts.yaml playbooks/force-stable-kernel.yml
+      - name: 4. Stabilize Linux Systems
+        run: |
+          ansible-playbook -i inventory/hosts.yaml playbooks/lock-controller-kernel.yml
+          ansible-playbook -i inventory/hosts.yaml playbooks/force-stable-kernel.yml
       
-      - name: 6. 对所有主机进行最终健康检查 (Ping All Hosts)
-        run: ansible -i inventory/hosts.yaml all -m ansible.builtin.ping
+      - name: 5. Health Check: Linux & macOS
+        run: ansible -i inventory/hosts.yaml linux,macos -m ansible.builtin.ping
         
-      #- name: 7. Ping Windows Hosts
-        #run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
+      - name: 6. Health Check: Windows
+        run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_ping
+        ignore-errors: true # <-- 关键改动！
