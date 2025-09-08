@@ -4,7 +4,9 @@
 
   tasks:
     - name: Ensure C:\ops exists
-      ansible.builtin.shell: 'powershell -NoProfile -Command "New-Item -ItemType Directory -Path C:\ops -Force | Out-Null"'
+      ansible.windows.win_file:
+        path: C:\ops
+        state: directory
 
     - name: Deploy to-linux.ps1
       ansible.builtin.template:
