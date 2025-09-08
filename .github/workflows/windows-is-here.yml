@@ -1,0 +1,22 @@
+name: Windows Is Here (Health Check)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-windows:
+    runs-on: self-hosted
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup SSH Key for Ansible
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: 3. Install Ansible Windows dependencies
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: 4. Run Command on Windows Hosts
+        run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_command -a hostname
