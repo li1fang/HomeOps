@@ -16,12 +16,14 @@
 
     - name: Decide and Switch to Linux
       ansible.builtin.command:
-        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml"
+        # 修正: 移除了多余的 "playbooks/" 路径
+        cmd: "ansible-playbook -i inventory/hosts.yaml switch-to-linux.yml"
       when: windows_status.unreachable is not true and linux_status.unreachable is true
 
     - name: Decide and Switch to Windows
       ansible.builtin.command:
-        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-windows.yml"
+        # 修正: 移除了多余的 "playbooks/" 路径
+        cmd: "ansible-playbook -i inventory/hosts.yaml switch-to-windows.yml"
       when: linux_status.unreachable is not true and windows_status.unreachable is true
 
     - name: Report if both systems are offline
