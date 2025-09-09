@@ -9,5 +9,7 @@
   hosts: windows
   gather_facts: false
   tasks:
+ codex/review-ansible-playbooks-for-compatibility-issues-ggqmkz
     - name: Whoami
+
       ansible.windows.win_command: whoami
