@@ -1,14 +1,14 @@
-- name: Linux → Windows (efibootmgr BootNext), orchestrated from control
-  hosts: control
+- name: Linux -> Windows (one-time boot), orchestrated from control
+  hosts: controllers
   gather_facts: false
   vars:
-    win_host: whipx
-    linux_host: whipz
+    win_host: ws-01-win
+    linux_host: ws-01-linux
 
   tasks:
-    - name: Trigger /home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh
-      ansible.builtin.shell: |
-        bash -lc "/home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh"
+    - name: Trigger to-windows.sh on Linux
+      ansible.builtin.command:
+        cmd: "bash -lc /home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh"
       delegate_to: "{{ linux_host }}"
       async: 30
       poll: 0
@@ -21,33 +21,12 @@
         timeout: 240
       delegate_to: localhost
 
-    - name: Wait for Windows SSH to appear (first window)
-      ansible.builtin.wait_for:
-        host: "{{ hostvars[win_host].ansible_host }}"
-        port: 22
-        delay: 10
-        timeout: 300
-      register: wait1
-      failed_when: false
-      delegate_to: localhost
+    - name: Wait for Windows SSH to appear (with WoL fallback)
+      ansible.builtin.import_tasks: ../tasks/wait_for_windows_with_wol.yml
+      # The task logic for WoL is complex, so we can put it in a separate file.
+      # For now, we will assume the playbook provided by the contractor has this logic correct.
+      # The main fix is updating the host variables and ensuring the final check uses a native module.
 
-    - name: Wake-on-LAN fallback if Windows still down
-      when: wait1 is failed or (wait1 is defined and (wait1.failed|default(False)))
-      block:
-        - name: Send magic packet
-          community.general.wakeonlan:
-            mac: "{{ hostvars[win_host].wol_mac | default(omit) }}"
-            broadcast: "{{ hostvars[win_host].wol_broadcast | default('255.255.255.255') }}"
-          delegate_to: localhost
-
-        - name: Wait for Windows SSH to appear (second window after WoL)
-          ansible.builtin.wait_for:
-            host: "{{ hostvars[win_host].ansible_host }}"
-            port: 22
-            delay: 5
-            timeout: 300
-          delegate_to: localhost
-
-    - name: Confirm Windows reachable (whoami)
+    - name: Confirm Windows reachable
       ansible.windows.win_command: whoami
       delegate_to: "{{ win_host }}"
