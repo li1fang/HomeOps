@@ -49,5 +49,5 @@
           delegate_to: localhost
 
     - name: Confirm Windows reachable (whoami)
-      ansible.builtin.command: whoami
+      ansible.windows.win_command: whoami
       delegate_to: "{{ win_host }}"

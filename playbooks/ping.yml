@@ -10,4 +10,4 @@
   gather_facts: false
   tasks:
     - name: whoami
-      ansible.builtin.command: whoami
+      ansible.windows.win_command: whoami
