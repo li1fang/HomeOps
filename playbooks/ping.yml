@@ -2,12 +2,12 @@
   hosts: linux
   gather_facts: false
   tasks:
-    - name: ping
+    - name: Ping
       ansible.builtin.ping:
 
 - name: Windows ping (via SSH)
   hosts: windows
   gather_facts: false
   tasks:
-    - name: whoami
-      ansible.builtin.command: whoami
+    - name: Whoami
+      ansible.windows.win_command: whoami

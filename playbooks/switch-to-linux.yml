@@ -1,15 +1,15 @@
-- name: Windows → Linux (one-time boot to Ubuntu via bcdedit), orchestrated from control
-  hosts: control
+- name: Windows → Linux (one-time boot to Ubuntu via bcdedit), orchestrated from controllers
+  hosts: controllers
   gather_facts: false
   vars:
-    win_host: whipx
-    linux_host: whipz
+    win_host: ws-01-win
+    linux_host: ws-01-linux
     ps_file: 'C:\ops\to-linux.ps1'
 
   tasks:
     - name: Trigger to-linux.ps1 on Windows
-      ansible.builtin.shell: |
-        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"
+      ansible.windows.win_shell: |
+        Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"' -WindowStyle Hidden
       delegate_to: "{{ win_host }}"
       async: 30
       poll: 0

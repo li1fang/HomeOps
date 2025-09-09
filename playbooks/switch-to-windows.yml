@@ -1,17 +1,18 @@
-- name: Linux → Windows (efibootmgr BootNext), orchestrated from control
-  hosts: control
+- name: Linux → Windows (efibootmgr BootNext), orchestrated from controllers
+  hosts: controllers
   gather_facts: false
   vars:
-    win_host: whipx
-    linux_host: whipz
+    win_host: ws-01-win
+    linux_host: ws-01-linux
 
   tasks:
-    - name: Trigger /home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh
+    - name: Trigger to-windows.sh on Linux host
       ansible.builtin.shell: |
         bash -lc "/home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh"
       delegate_to: "{{ linux_host }}"
       async: 30
       poll: 0
+      changed_when: false
 
     - name: Wait for Linux SSH to drop
       ansible.builtin.wait_for:
@@ -32,7 +33,7 @@
       delegate_to: localhost
 
     - name: Wake-on-LAN fallback if Windows still down
-      when: wait1 is failed or (wait1 is defined and (wait1.failed|default(False)))
+      when: wait1 is failed or (wait1 is defined and (wait1.failed | default(False)))
       block:
         - name: Send magic packet
           community.general.wakeonlan:
@@ -49,5 +50,5 @@
           delegate_to: localhost
 
     - name: Confirm Windows reachable (whoami)
-      ansible.builtin.command: whoami
+      ansible.windows.win_command: whoami
       delegate_to: "{{ win_host }}"
