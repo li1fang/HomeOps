@@ -24,7 +24,7 @@
   gather_facts: false
   tasks:
     - name: Ensure sshd running
-      ansible.builtin.shell: |
+      ansible.windows.win_shell: |
         powershell -NoProfile -Command "
           Set-Service -Name sshd -StartupType Automatic
           if ((Get-Service sshd).Status -ne 'Running') { Start-Service sshd }
