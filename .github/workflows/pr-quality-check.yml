@@ -8,16 +8,16 @@ jobs:
     name: Ansible Lint and Syntax Check
     runs-on: self-hosted
 
-    steps:
-      - name: 1. Checkout code
-        uses: actions/checkout@v4
+        steps:
+          - name: 1. Checkout code
+            uses: actions/checkout@v4
 
-      - name: 2. Install Ansible and ansible-lint
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible ansible-lint
-
-      - name: 3. Run ansible-lint
+          - name: 2. Install Ansible and ansible-lint
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y ansible ansible-lint
+          
+          - name: 3. Run ansible-lint
         run: ansible-lint playbooks/*.yml
 
       - name: 4. Run ansible-playbook syntax-check
