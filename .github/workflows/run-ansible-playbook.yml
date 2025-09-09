@@ -1,0 +1,31 @@
+name: Run Ansible Playbook Manually
+
+on:
+  workflow_dispatch:
+    inputs:
+      playbook:
+        description: 'Which playbook to run?'
+        required: true
+        type: choice
+        options:
+          - cleanup-boot-entries.yml
+          - toggle-os.yml
+          - force-stable-kernel.yml
+          - bootstrap-windows.yml
+          - bootstrap-linux.yml
+        default: 'cleanup-boot-entries.yml'
+
+jobs:
+  run-playbook:
+    runs-on: self-hosted
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: 3. Run the selected playbook
+        run: ansible-playbook -i inventory/hosts.yaml "playbooks/{{ inputs.playbook }}"
