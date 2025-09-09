@@ -31,4 +31,3 @@
             New-NetFirewallRule -DisplayName 'OpenSSH Server (TCP 22)' -Direction Inbound -Protocol TCP -LocalPort 22 -Action Allow -Profile Any | Out-Null
           }
         "
-

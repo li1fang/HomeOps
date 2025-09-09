@@ -2,12 +2,14 @@
   hosts: linux
   gather_facts: false
   tasks:
-    - name: ping
+    - name: Ping
       ansible.builtin.ping:
 
 - name: Windows ping (via SSH)
   hosts: windows
   gather_facts: false
   tasks:
-    - name: whoami
+ codex/review-ansible-playbooks-for-compatibility-issues-q8bq6c
+    - name: Whoami
+ main
       ansible.windows.win_command: whoami
