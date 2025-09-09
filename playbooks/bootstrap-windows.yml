@@ -12,7 +12,6 @@
       ansible.windows.win_template:
         src: ../templates/to-linux.ps1.j2
         dest: "C:\\ops\\to-linux.ps1"
-        mode: '0644'
         newline_sequence: "\r\n"
 
     - name: Enable and start OpenSSH Server
