@@ -1,9 +1,9 @@
-- name: Linux → Windows (efibootmgr BootNext), orchestrated from control
-  hosts: control
+- name: Linux → Windows (efibootmgr BootNext), orchestrated from controllers
+  hosts: controllers
   gather_facts: false
   vars:
-    win_host: whipx
-    linux_host: whipz
+    win_host: ws-01-win
+    linux_host: ws-01-linux
 
   tasks:
     - name: Trigger to-windows.sh on Linux host
