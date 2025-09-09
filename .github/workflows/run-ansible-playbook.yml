@@ -28,4 +28,6 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       
       - name: 3. Run the selected playbook
-        run: ansible-playbook -i inventory/hosts.yaml "playbooks/{{ inputs.playbook }}"
+        env:
+          PLAYBOOK_NAME: ${{ inputs.playbook }}
+        run: ansible-playbook -i inventory/hosts.yaml "playbooks/$PLAYBOOK_NAME"
