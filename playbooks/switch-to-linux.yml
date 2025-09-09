@@ -8,7 +8,7 @@
 
   tasks:
     - name: Trigger to-linux.ps1 on Windows
-      ansible.builtin.shell: |
+      ansible.windows.win_shell: |
         powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"
       delegate_to: "{{ win_host }}"
       async: 30
