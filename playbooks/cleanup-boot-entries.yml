@@ -1,0 +1,31 @@
+- name: Find and Delete 'Intel Volumel' ghost entry
+
+become: true
+
+block:
+
+- name: Find the 'Intel Volume1' ghost entry
+
+ansible.builtin.set_fact:
+
+ghost_entry_bootnums: "{{ efiboot_output.stdout_lines | map('regex_search', '^Boot(\\d{4})\\*.*?Intel Volumel', '\\1') | select('string') | list }}"
+
+# 这一步直接用map和select，一次性把所有找到的BootNum提取成一个列表
+
+
+
+- name: Delete the ghost boot entries
+
+ansible.builtin.command:
+
+cmd: "efibootmgr -b {{ item }} -B"
+
+loop: "{{ ghost_entry_bootnums }}"
+
+# 直接循环刚才生成的数字列表
+
+
+
+when: "'Intel Volumel' in efiboot_output.stdout"
+
+# 只用一个简单的字符串检查，来决定整个区块是否需要执行
