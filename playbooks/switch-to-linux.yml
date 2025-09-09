@@ -8,11 +8,9 @@
 
   tasks:
     - name: Trigger to-linux.ps1 on Windows
-      ansible.builtin.shell: |
-        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"
+      ansible.windows.win_shell: |
+        Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"' -WindowStyle Hidden
       delegate_to: "{{ win_host }}"
-      async: 30
-      poll: 0
 
     - name: Wait for Windows SSH to drop
       ansible.builtin.wait_for:
