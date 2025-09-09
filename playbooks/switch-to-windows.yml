@@ -1,6 +1,6 @@
- codex/review-ansible-playbooks-for-compatibility-issues-q8bq6c
+ codex/review-ansible-playbooks-for-compatibility-issues-ggqmkz
 - name: Linux → Windows (efibootmgr BootNext), orchestrated from controllers
-
+ main
   hosts: controllers
   gather_facts: false
   vars:
@@ -8,7 +8,8 @@
     linux_host: ws-01-linux
 
   tasks:
- codex/review-ansible-playbooks-for-compatibility-issues-q8bq6c
+ codex/review-ansible-playbooks-for-compatibility-issues-ggqmkz
+
     - name: Trigger to-windows.sh on Linux host
       ansible.builtin.shell: |
         bash -lc "/home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh"
@@ -55,6 +56,7 @@
           delegate_to: localhost
 
     - name: Confirm Windows reachable (whoami)
+ codex/review-ansible-playbooks-for-compatibility-issues-ggqmkz
  main
       ansible.windows.win_command: whoami
       delegate_to: "{{ win_host }}"
