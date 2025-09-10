@@ -1,0 +1,14 @@
+- name: Install Boot-Repair on ws-01-linux
+  hosts: ws-01-linux
+  become: true
+  tasks:
+    - name: Add Boot-Repair PPA repository
+      ansible.builtin.apt_repository:
+        repo: ppa:yannubuntu/boot-repair
+        state: present
+
+    - name: Update apt cache and install boot-repair
+      ansible.builtin.apt:
+        name: boot-repair
+        state: present
+        update_cache: yes
