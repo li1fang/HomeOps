@@ -13,6 +13,7 @@ on:
           - force-stable-kernel.yml
           - bootstrap-windows.yml
           - bootstrap-linux.yml
+          - install-boot-repair.yml # <-- 在这里手动添加新剧本
         default: 'cleanup-boot-entries.yml'
 
 jobs:
