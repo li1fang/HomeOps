@@ -1,0 +1,30 @@
+- name: Surgically remove broken kernel packages from ws-01-linux
+  hosts: ws-01-linux
+  become: true
+  tasks:
+    - name: Force remove broken NVIDIA meta-package
+      ansible.builtin.dpkg:
+        name: linux-modules-nvidia-550-generic-hwe-24.04
+        state: absent
+        force: yes
+
+    - name: Force remove all related 6.14.0-29 packages
+      ansible.builtin.apt:
+        name:
+          - linux-image-6.14.0-29-generic
+          - linux-headers-6.14.0-29-generic
+          - linux-modules-nvidia-550-6.14.0-29-generic
+          - linux-signatures-nvidia-6.14.0-29-generic
+        state: absent
+        autoremove: yes
+        purge: yes
+        force: yes
+
+    - name: Run 'apt --fix-broken install'
+      ansible.builtin.apt:
+        fix_broken: yes
+
+    - name: Final update to GRUB
+      ansible.builtin.command:
+        cmd: update-grub
+      changed_when: false
