@@ -1,0 +1,124 @@
+---
+# playbooks/repair-boot-final.yml
+# 说明：
+# - 本剧本只做“一次性修复引导路径”的事情，幂等、可重复执行。
+# - 前提：inventory 已有 ws-01-linux（Ubuntu）与 ws-01-win（Windows）。
+# - 目标：创建/刷新 “UbuntuDirect” 固件项 -> \EFI\ubuntu\grubx64.efi，并让 Windows 侧脚本改查 UbuntuDirect。
+
+#######################################################################
+# A) Linux 侧：创建/刷新 UbuntuDirect（直链 grubx64.efi，不走 shim）
+#######################################################################
+- name: Create/refresh 'UbuntuDirect' UEFI entry on ws-01-linux
+  hosts: ws-01-linux
+  gather_facts: false
+
+  vars:
+    linux_ops_dir: "/home/{{ ansible_user }}/ops"
+    make_script:   "{{ linux_ops_dir }}/make-ubuntu-direct.sh"
+
+  pre_tasks:
+    - name: Ensure 'efibootmgr' is present
+      become: true
+      ansible.builtin.apt:
+        name: efibootmgr
+        state: present
+        update_cache: true
+
+    - name: Ensure ops dir exists (in the target user's home)
+      ansible.builtin.file:
+        path: "{{ linux_ops_dir }}"
+        state: directory
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+  tasks:
+    - name: Install make-ubuntu-direct.sh (exact content)
+      ansible.builtin.copy:
+        dest: "{{ make_script }}"
+        mode: "0755"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          echo "[+] Create/refresh 'UbuntuDirect' UEFI entry to \\EFI\\ubuntu\\grubx64.efi (bypass shim)"
+
+          # Find ESP device, disk, and partition number
+          esp=$(findmnt -no SOURCE /boot/efi)
+          disk="/dev/$(lsblk -no PKNAME "$esp")"
+          part=$(cat "/sys/class/block/${esp##*/}/partition")
+
+          # Clean up old UbuntuDirect entry (if any)
+          while read -r num; do
+            sudo efibootmgr -b "$num" -B || true
+          done < <(sudo efibootmgr -v | awk -F'*' '/UbuntuDirect/{print substr($1,5,4)}')
+
+          # Create new UbuntuDirect entry pointing to grubx64.efi (not shimx64.efi)
+          sudo efibootmgr -c -d "$disk" -p "$part" -L 'UbuntuDirect' -l '\EFI\ubuntu\grubx64.efi'
+
+          echo "[+] Current EFI entries (grep Ubuntu):"
+          sudo efibootmgr -v | grep -E 'Ubuntu|ubuntu' || true
+
+    - name: Run make-ubuntu-direct.sh
+      become: true
+      ansible.builtin.shell: "bash {{ make_script }}"
+      register: make_direct
+      changed_when: "'UbuntuDirect' in make_direct.stdout or 'UbuntuDirect' in make_direct.stderr"
+
+    - name: Assert UbuntuDirect present
+      become: true
+      ansible.builtin.shell: "efibootmgr -v"
+      register: efiv
+      changed_when: false
+
+    - name: Verify 'UbuntuDirect' appears in efibootmgr output
+      ansible.builtin.assert:
+        that: "'UbuntuDirect' in efiv.stdout"
+        fail_msg: "UbuntuDirect entry not found in firmware. Please check /boot/efi and efibootmgr output."
+        success_msg: "UbuntuDirect entry confirmed."
+
+#######################################################################
+# B) Windows 侧：更新 to-linux.ps1（改查 UbuntuDirect）并关闭 Fast Startup
+#######################################################################
+- name: Update Windows to-linux script and disable Fast Startup
+  hosts: ws-01-win
+  gather_facts: false
+
+  vars:
+    win_ops_dir: 'C:\ops'
+    win_script:  '{{ win_ops_dir }}\to-linux.ps1'
+
+  tasks:
+    - name: Ensure C:\ops exists
+      ansible.windows.win_file:
+        path: "{{ win_ops_dir }}"
+        state: directory
+
+    - name: Deploy updated to-linux.ps1 from template
+      ansible.builtin.template:
+        src: "templates/to-linux.ps1.j2"
+        dest: "{{ win_script }}"
+
+    - name: Disable Fast Startup via registry (HiberbootEnabled=0)
+      ansible.windows.win_regedit:
+        path: HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power
+        name: HiberbootEnabled
+        data: 0
+        type: dword
+        state: present
+
+    - name: Disable hibernation (powercfg /hibernate off)
+      ansible.windows.win_shell: 'powercfg /hibernate off'
+      changed_when: false  # 幂等：重复执行不报 changed
+
+    - name: Check firmware entries include 'UbuntuDirect'
+      ansible.windows.win_shell: 'bcdedit /enum firmware'
+      register: bcd_fw
+      changed_when: false
+
+    - name: Verify 'UbuntuDirect' visible to Windows firmware listing
+      ansible.builtin.assert:
+        that: "'UbuntuDirect' in bcd_fw.stdout"
+        fail_msg: "Windows firmware listing does NOT show 'UbuntuDirect'. Reboot to Linux and re-run the Linux part."
+        success_msg: "Windows sees 'UbuntuDirect'. Ready for one-shot boot."
