@@ -1,12 +1,12 @@
 # templates/to-linux.ps1.j2
-# 移除 shim 路径，指向 UbuntuDirect（grubx64.efi）
-# 要求：管理员权限；Fast Startup 已关闭（playbooks/repair-boot-final.yml 已处理）
+# 仅查找“UbuntuDirect”，避免 shim 路径，确保一次性引导稳定
+# 要求：管理员权限；Fast Startup 已关闭（repair-boot-final.yml 已处理）
 
 $fw = bcdedit /enum firmware
 $hit = ($fw | Select-String -Pattern '^\s*description\s+UbuntuDirect\s*$' -SimpleMatch | Select-Object -First 1)
 if (-not $hit) { throw "Cannot find the 'UbuntuDirect' firmware entry. Please run the repair playbook's Linux tasks first." }
 
-# 回溯查找 GUID 行
+# 回溯寻找 GUID 行
 $line = $hit.LineNumber
 $guid = $null
 for ($i=$line-3; $i -ge 0; $i--) {
