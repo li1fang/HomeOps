@@ -4,7 +4,6 @@
 # - 本剧本只做“一次性修复引导路径”的事情，幂等、可重复执行。
 # - 前提：inventory 已有 ws-01-linux（Ubuntu）与 ws-01-win（Windows）。
 # - 目标：创建/刷新 “UbuntuDirect” 固件项 -> \EFI\ubuntu\grubx64.efi，并让 Windows 侧脚本改查 UbuntuDirect。
-# - 容错：ignore_unreachable: true 以便即便一侧不在线，也不阻断另一侧继续执行。
 
 #######################################################################
 # A) Linux 侧：创建/刷新 UbuntuDirect（直链 grubx64.efi，不走 shim）
@@ -12,7 +11,7 @@
 - name: Create/refresh 'UbuntuDirect' UEFI entry on ws-01-linux
   hosts: ws-01-linux
   gather_facts: false
-  ignore_unreachable: true   # ⭐ 即使 ws-01-linux 暂不可达，也不阻断后续 Windows 任务
+  ignore_unreachable: true  # 仅增加容错，不改原有逻辑
 
   vars:
     linux_ops_dir: "/home/{{ ansible_user }}/ops"
@@ -66,23 +65,19 @@
       become: true
       ansible.builtin.shell: "bash {{ make_script }}"
       register: make_direct
-      # 若 Linux 侧脚本输出包含 UbuntuDirect 字样则记为 changed；否则保持幂等
       changed_when: "'UbuntuDirect' in make_direct.stdout or 'UbuntuDirect' in make_direct.stderr"
-      # 如果目标临时不在线/执行失败，本 play 会报错，但不会阻断后续 Windows Play
 
     - name: Assert UbuntuDirect present
       become: true
       ansible.builtin.shell: "efibootmgr -v"
       register: efiv
       changed_when: false
-      ignore_errors: true     # ⭐ 不因此步失败而阻断后续（日志仍会记录）
 
     - name: Verify 'UbuntuDirect' appears in efibootmgr output
       ansible.builtin.assert:
         that: "'UbuntuDirect' in efiv.stdout"
         fail_msg: "UbuntuDirect entry not found in firmware. Please check /boot/efi and efibootmgr output."
         success_msg: "UbuntuDirect entry confirmed."
-      ignore_errors: true     # ⭐ 不中断流程，让 Windows 任务继续执行
 
 #######################################################################
 # B) Windows 侧：更新 to-linux.ps1（改查 UbuntuDirect）并关闭 Fast Startup
@@ -90,7 +85,7 @@
 - name: Update Windows to-linux script and disable Fast Startup
   hosts: ws-01-win
   gather_facts: false
-  ignore_unreachable: true   # ⭐ 即使 ws-01-win 暂不可达，也可先修 Linux 侧而不报全局失败
+  ignore_unreachable: true  # 仅增加容错，不改原有逻辑
 
   vars:
     win_ops_dir: 'C:\ops'
@@ -104,7 +99,7 @@
 
     - name: Deploy updated to-linux.ps1 from template
       ansible.builtin.template:
-        src: "templates/to-linux.ps1.j2"
+        src: "../templates/to-linux.ps1.j2"   # ★ 修正：从 playbooks/ 相对到仓库根 templates/
         dest: "{{ win_script }}"
 
     - name: Disable Fast Startup via registry (HiberbootEnabled=0)
@@ -123,11 +118,9 @@
       ansible.windows.win_shell: 'bcdedit /enum firmware'
       register: bcd_fw
       changed_when: false
-      ignore_errors: true   # ⭐ 可见但不强制中断（固件缓存偶尔会延迟）
 
     - name: Verify 'UbuntuDirect' visible to Windows firmware listing
       ansible.builtin.assert:
         that: "'UbuntuDirect' in bcd_fw.stdout"
         fail_msg: "Windows firmware listing does NOT show 'UbuntuDirect'. Reboot to Linux and re-run the Linux part."
         success_msg: "Windows sees 'UbuntuDirect'. Ready for one-shot boot."
-      ignore_errors: true
