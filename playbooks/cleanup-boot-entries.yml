@@ -1,26 +1,14 @@
-- name: Clean up UEFI boot entries on ws-01-linux
+- name: Final Cleanup of UEFI boot entries on ws-01-linux
   hosts: ws-01-linux
   become: true
   tasks:
-    - name: Get current boot entries
+    - name: Delete the ghost Windows boot entry (Boot000B) if it exists
       ansible.builtin.command:
-        cmd: efibootmgr
-      register: efiboot_output
-      changed_when: false
+        cmd: efibootmgr -b 000B -B
+      register: delete_result
+      changed_when: "'Boot000B has been deleted' in delete_result.stdout"
+      failed_when: false # Ignore errors, as the entry might not exist
 
-    - name: Find and Delete 'Intel Volumel' ghost entry
-      become: true
-      block:
-        - name: Find the 'Intel Volumel' ghost entry boot numbers
-          ansible.builtin.set_fact:
-            ghost_entry_bootnums: "{{ efiboot_output.stdout_lines | map('regex_search', '^Boot(\\d{4})\\*.*?Intel Volumel', '\\1') | select('string') | list }}"
-
-        - name: Delete the ghost boot entries
-          ansible.builtin.command:
-            cmd: "efibootmgr -b {{ item }} -B"
-          loop: "{{ ghost_entry_bootnums }}"
-      when: "'Intel Volumel' in efiboot_output.stdout"
-
-    - name: Set a clean and correct boot order
+    - name: Set the final, correct boot order (Windows first, then Ubuntu)
       ansible.builtin.command:
-        cmd: "efibootmgr -o 0001,0007" # Assuming 0001 is Windows and 0007 is Ubuntu
+        cmd: "efibootmgr -o 0000,0007"
