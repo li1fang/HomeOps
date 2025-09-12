@@ -3,20 +3,77 @@ name: Smart Toggle OS
 on:
   workflow_dispatch:
 
+concurrency:
+  group: toggle-os
+  cancel-in-progress: false
+
 jobs:
   toggle-os:
     runs-on: self-hosted
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./
+
+    env:
+      ANSIBLE_FORCE_COLOR: "true"
+      # ansible.cfg 里已配置 log_path=logs/ansible.log；如无，可在这里指定
+      # ANSIBLE_LOG_PATH: logs/ansible.log
+
     steps:
       - name: 1. Checkout code
         uses: actions/checkout@v4
 
-      - name: 2. Setup SSH Key
+      - name: 2. Show host info
+        run: |
+          echo "Runner host: $(hostname)"
+          echo "PWD: $(pwd)"
+          ls -la
+
+      # 如你的 self-hosted runner 未预装 ansible，这一步会补齐；已装的话可删除
+      - name: 3. Ensure Ansible present
+        run: |
+          if ! command -v ansible >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ansible python3-pip
+          fi
+          ansible --version
+
+      - name: 4. Setup SSH Key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: 3. Install Ansible dependencies
+      # 可选：刷新 known_hosts，避免切系统后的 host key 冲突
+      - name: 5. Refresh known_hosts (optional)
+        run: |
+          if [[ -x scripts/ssh-keyscan.sh ]]; then
+            bash scripts/ssh-keyscan.sh
+          else
+            echo "scripts/ssh-keyscan.sh not found or not executable; skipping"
+          fi
+
+      - name: 6. Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml
 
-      - name: 4. Run the smart toggle playbook
-        run: ansible-playbook -i inventory/hosts.yaml playbooks/toggle-os.yml
+      # （可选）预热：快速探活，若失败也不阻断
+      - name: 7. Quick reachability (non-blocking)
+        continue-on-error: true
+        run: |
+          ansible -i inventory/hosts.yaml linux   -m ansible.builtin.ping || true
+          ansible -i inventory/hosts.yaml windows -m ansible.builtin.command -a "hostname" || true
+
+      - name: 8. Run the smart toggle playbook
+        run: ansible-playbook -i inventory/hosts.yaml playbooks/toggle-os.yml -vv
+
+      # 不管成功或失败，都把日志收走，方便复盘
+      - name: 9. Upload ansible logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-logs
+          path: |
+            logs/
+            **/ansible.log
+          if-no-files-found: ignore
