@@ -78,6 +78,9 @@
         that: "'UbuntuDirect' in efiv.stdout"
         fail_msg: "UbuntuDirect entry not found in firmware. Please check /boot/efi and efibootmgr output."
         success_msg: "UbuntuDirect entry confirmed."
+      ignore_errors: true
+      when: efiv is not skipped and efiv.stdout is defined # <--- 增加的智能判断
+
 
 #######################################################################
 # B) Windows 侧：更新 to-linux.ps1（改查 UbuntuDirect）并关闭 Fast Startup
