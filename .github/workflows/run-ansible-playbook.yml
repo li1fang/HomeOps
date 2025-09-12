@@ -8,14 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - cleanup-boot-entries.yml
-          - toggle-os.yml
-          - force-stable-kernel.yml
-          - bootstrap-windows.yml
-          - bootstrap-linux.yml
-          - repair-broken-kernel.yml
           - repair-boot-final.yml
-          - install-boot-repair.yml # <-- 在这里手动添加新剧本
         default: 'cleanup-boot-entries.yml'
 
 jobs:
