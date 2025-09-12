@@ -14,6 +14,7 @@ on:
           - bootstrap-windows.yml
           - bootstrap-linux.yml
           - repair-broken-kernel.yml
+          - repair-boot-final.yml
           - install-boot-repair.yml # <-- 在这里手动添加新剧本
         default: 'cleanup-boot-entries.yml'
 
