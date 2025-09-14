@@ -1,5 +1,5 @@
 ---
-# Switch ws-01: Linux → Windows (one-time boot), orchestrated from controller
+# Linux → Windows (one-time boot), orchestrated from controller
 
 - name: Linux -> Windows (one-time boot)
   hosts: controllers
@@ -9,7 +9,6 @@
     win_host:   ws-01-win
     linux_host: ws-01-linux
 
-    # WOL 参数（tailscale wake 优先，失败再 L2 广播；如非同一二层，可只依赖 tailscale）
     wol_mac: "9C:6B:00:05:B4:16"
     wol_broadcast: "192.168.1.255"
 
