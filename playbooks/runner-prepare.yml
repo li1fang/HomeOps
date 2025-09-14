@@ -1,0 +1,25 @@
+---
+- name: Prepare runner and capture tool versions
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifacts_dir: artifacts/test
+  tasks:
+    - name: Ensure artifacts directory exists
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Capture toolchain versions into artifacts
+      ansible.builtin.shell: |
+        set -euo pipefail
+        . .venv/bin/activate
+        {
+          echo "ansible      : $(ansible --version | head -n1)"
+          echo "ansible-lint : $(ansible-lint --version | head -n1)"
+          echo "yamllint     : $(yamllint --version)"
+        } > "{{ artifacts_dir }}/tools_versions.txt"
+      args:
+        executable: /bin/bash

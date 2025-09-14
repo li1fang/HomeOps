@@ -1,13 +1,7 @@
-- name: Linux ping
-  hosts: linux
+---
+- name: Sanity ping all hosts
+  hosts: all
   gather_facts: false
   tasks:
-    - name: Ping
+    - name: ping
       ansible.builtin.ping:
-
-- name: Windows ping (via SSH)
-  hosts: windows
-  gather_facts: false
-  tasks:
-    - name: Whoami
-      ansible.windows.win_command: whoami
