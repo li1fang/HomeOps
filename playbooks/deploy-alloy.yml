@@ -1,0 +1,54 @@
+- name: Deploy Grafana Alloy on Controllers
+  hosts: controllers
+  become: true
+  tasks:
+    - name: Ensure required packages are installed
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+        state: present
+        update_cache: true
+
+    - name: Add Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/trusted.gpg.d/grafana.gpg
+        mode: '0644'
+
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb https://apt.grafana.com stable main"
+        state: present
+
+    - name: Install Grafana Alloy
+      ansible.builtin.apt:
+        name: alloy
+        state: present
+        update_cache: true
+
+    - name: Create Alloy configuration directory
+      ansible.builtin.file:
+        path: /etc/alloy
+        state: directory
+        mode: '0755'
+
+    - name: Deploy the initial Alloy configuration file
+      ansible.builtin.template:
+        src: ../templates/config.alloy.j2
+        dest: /etc/alloy/config.alloy
+        mode: '0644'
+      notify: Restart Alloy
+
+    - name: Ensure Alloy service is enabled and started
+      ansible.builtin.systemd:
+        name: alloy
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart Alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: restarted
