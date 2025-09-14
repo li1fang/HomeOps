@@ -1,0 +1,16 @@
+// templates/config.alloy.j2
+prometheus.scrape "self" {
+  targets = [
+    {"__address__" = "127.0.0.1:12345", "instance" = "alloy-itself"},
+  ]
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = "http://localhost:9090/api/v1/write" // This is a placeholder, as we are writing to a local WAL.
+  }
+  wal {
+    path = "/tmp/alloy-wal" // Write data to a local directory for verification.
+  }
+}
