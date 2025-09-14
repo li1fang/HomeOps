@@ -3,20 +3,72 @@ name: Smart Toggle OS
 on:
   workflow_dispatch:
 
+concurrency:
+  group: toggle-os
+  cancel-in-progress: false
+
 jobs:
   toggle-os:
     runs-on: self-hosted
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./
+
+    env:
+      ANSIBLE_FORCE_COLOR: "true"
+
     steps:
       - name: 1. Checkout code
         uses: actions/checkout@v4
 
-      - name: 2. Setup SSH Key
+      - name: 2. Show host info
+        run: |
+          echo "Runner: $(hostname)"
+          echo "PWD: $(pwd)"
+          ls -la
+
+      - name: 3. Ensure Ansible present (skip if preinstalled)
+        run: |
+          if ! command -v ansible >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ansible python3-pip
+          fi
+          ansible --version
+
+      - name: 4. Setup SSH Key
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: 3. Install Ansible dependencies
+      - name: 5. Refresh known_hosts (optional)
+        run: |
+          if [[ -x scripts/ssh-keyscan.sh ]]; then
+            bash scripts/ssh-keyscan.sh
+          else
+            echo "scripts/ssh-keyscan.sh not found; skip"
+          fi
+
+      - name: 6. Install Ansible collections
         run: ansible-galaxy collection install -r requirements.yml
 
-      - name: 4. Run the smart toggle playbook
+      # ✅ 修正点：Linux/macOS 用 ping；Windows 用 "hostname"（SSH 友好）
+      - name: 7. Quick reachability (non-blocking)
+        continue-on-error: true
+        run: |
+          ansible -i inventory/hosts.yaml linux,macos -m ansible.builtin.ping || true
+          ansible -i inventory/hosts.yaml windows -m ansible.builtin.command -a "hostname" || true
+
+      - name: 8. Run the smart toggle playbook
         run: ansible-playbook -i inventory/hosts.yaml playbooks/toggle-os.yml -vv
+
+      - name: 9. Upload ansible logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ansible-logs
+          path: |
+            logs/
+            **/ansible.log
+          if-no-files-found: ignore
