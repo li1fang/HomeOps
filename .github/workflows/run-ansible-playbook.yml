@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - repair-boot-final.yml
+          - deploy-alloy.yml
         default: 'cleanup-boot-entries.yml'
 
 jobs:
