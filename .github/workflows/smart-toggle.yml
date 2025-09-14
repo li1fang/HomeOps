@@ -1,4 +1,4 @@
-name: Smart Toggle OS
+name: Smart Toggle OS 2
 
 on:
   workflow_dispatch:
