@@ -1,5 +1,5 @@
 ---
-# Switch ws-01: Windows → Linux (one-time boot), orchestrated from controller
+# Windows → Linux (one-time boot), orchestrated from controller
 
 - name: Windows -> Linux (one-time boot)
   hosts: controllers
@@ -10,8 +10,8 @@
     linux_host: ws-01-linux
 
   tasks:
-    - name: Trigger to-linux.ps1 on Windows (async, via SSH-friendly command)
-      ansible.builtin.shell: |
+    - name: Trigger to-linux.ps1 on Windows (async; PowerShell-safe)
+      ansible.windows.win_shell: |
         powershell -NoProfile -ExecutionPolicy Bypass -File C:\ops\to-linux.ps1
       delegate_to: "{{ win_host }}"
       async: 30
