@@ -1,0 +1,8 @@
+on:
+  push:
+    branches:
+      - main
+    paths: # 优化：只有当日志相关的剧本或模板文件发生变化时，才触发
+      - 'playbooks/deploy-alloy.yml'
+      - 'playbooks/deploy-loki.yml'
+      - 'templates/config.alloy.j2'
