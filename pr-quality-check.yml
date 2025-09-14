@@ -1,0 +1,71 @@
+name: HomeOps Quality Gates
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  quality:
+    name: Quality Gates (Gate0→Gate2 + Conditional Deploy)
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bootstrap ansible toolchain (missing-safe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v python3 >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y python3 python3-venv python3-pip
+            elif command -v dnf >/dev/null 2>&1; then
+              sudo dnf install -y python3 python3-virtualenv python3-pip || true
+            elif command -v yum >/dev/null 2>&1; then
+              sudo yum install -y python3 python3-virtualenv python3-pip || true
+            fi
+          fi
+          python3 -m pip install -U pip
+          python3 -m pip install ansible ansible-lint yamllint
+
+      - name: Gate 0 - make setup
+        env:
+          ANSIBLE_STDOUT_CALLBACK: default
+        run: make setup
+
+      - name: Gate 1.1 - make lint
+        env:
+          ANSIBLE_STDOUT_CALLBACK: default
+        run: make lint
+
+      - name: Gate 1.2 - make test
+        env:
+          ANSIBLE_STDOUT_CALLBACK: default
+        run: make test
+
+      - id: itest
+        name: Gate 2 - make itest (if test playbook exists)
+        if: ${{ success() && hashFiles('playbooks/tests/verify_observability.yml') != '' }}
+        env:
+          ANSIBLE_STDOUT_CALLBACK: default
+        run: make itest
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: homeops-artifacts
+          path: |
+            artifacts/test
+            artifacts/itest
+          if-no-files-found: ignore
+
+      - name: Deploy (conditional after successful Gate 2; push to main only)
+        if: ${{ steps.itest.outcome == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('playbooks/deploy-observability-stack.yml') != '' }}
+        env:
+          ANSIBLE_STDOUT_CALLBACK: default
+        run: make deploy
