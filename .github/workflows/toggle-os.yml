@@ -61,8 +61,9 @@ jobs:
       - name: 7. Quick reachability (non-blocking)
         continue-on-error: true
         run: |
-          ansible -i inventory/hosts.yaml linux   -m ansible.builtin.ping || true
-          ansible -i inventory/hosts.yaml windows -m ansible.builtin.command -a "hostname" || true
+          ansible -i inventory/hosts.yaml linux,macos -m ansible.builtin.ping || true
+          ansible -i inventory/hosts.yaml windows     -m ansible.windows.win_ping || true
+
 
       - name: 8. Run the smart toggle playbook
         run: ansible-playbook -i inventory/hosts.yaml playbooks/toggle-os.yml -vv
