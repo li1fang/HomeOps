@@ -8,18 +8,25 @@
           - apt-transport-https
           - software-properties-common
           - wget
+          - gpg
         state: present
         update_cache: true
 
-    - name: Add Grafana GPG key
-      ansible.builtin.get_url:
-        url: https://apt.grafana.com/gpg.key
-        dest: /etc/apt/trusted.gpg.d/grafana.gpg
-        mode: '0644'
+    - name: Create keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
 
-    - name: Add Grafana APT repository
+    - name: Add Grafana GPG key (modern method)
+      ansible.builtin.shell: |
+        wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+      args:
+        creates: /etc/apt/keyrings/grafana.gpg # This makes the task idempotent
+
+    - name: Add Grafana APT repository (modern method)
       ansible.builtin.apt_repository:
-        repo: "deb https://apt.grafana.com stable main"
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
         state: present
 
     - name: Install Grafana Alloy
@@ -28,6 +35,7 @@
         state: present
         update_cache: true
 
+    # ... (后续的配置文件部署和服务启动任务保持不变) ...
     - name: Create Alloy configuration directory
       ansible.builtin.file:
         path: /etc/alloy
