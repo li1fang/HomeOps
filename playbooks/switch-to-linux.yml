@@ -1,20 +1,23 @@
-- name: Windows -> Linux (one-time boot), orchestrated from control
+---
+# Switch ws-01: Windows → Linux (one-time boot), orchestrated from controller
+
+- name: Windows -> Linux (one-time boot)
   hosts: controllers
   gather_facts: false
+
   vars:
-    win_host: ws-01-win
+    win_host:   ws-01-win
     linux_host: ws-01-linux
-    ps_file: 'C:\ops\to-linux.ps1'
 
   tasks:
-    - name: Trigger to-linux.ps1 on Windows
-      ansible.windows.win_shell: |
-        Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{{ ps_file }}"' -WindowStyle Hidden
+    - name: Trigger to-linux.ps1 on Windows (async, via SSH-friendly command)
+      ansible.builtin.shell: |
+        powershell -NoProfile -ExecutionPolicy Bypass -File C:\ops\to-linux.ps1
       delegate_to: "{{ win_host }}"
       async: 30
       poll: 0
 
-    - name: Wait for Windows SSH to drop
+    - name: Wait for Windows SSH(22) to drop
       ansible.builtin.wait_for:
         host: "{{ hostvars[win_host].ansible_host }}"
         port: 22
@@ -22,14 +25,14 @@
         timeout: 240
       delegate_to: localhost
 
-    - name: Wait for Linux SSH to appear
+    - name: Wait for Linux SSH(22) to appear
       ansible.builtin.wait_for:
         host: "{{ hostvars[linux_host].ansible_host }}"
         port: 22
         delay: 10
-        timeout: 600
+        timeout: 720
       delegate_to: localhost
 
-    - name: Confirm Linux reachable
+    - name: Confirm Linux reachable (ping -> pong)
       ansible.builtin.ping:
       delegate_to: "{{ linux_host }}"
