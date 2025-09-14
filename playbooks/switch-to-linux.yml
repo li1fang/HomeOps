@@ -13,4 +13,23 @@
       delegate_to: "{{ win_host }}"
       async: 30
       poll: 0
-    # ... 后续的 wait_for 和 ping 任务 ...
+
+    - name: Wait for Windows SSH to drop
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[win_host].ansible_host }}"
+        port: 22
+        state: drained
+        timeout: 240
+      delegate_to: localhost
+
+    - name: Wait for Linux SSH to appear
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[linux_host].ansible_host }}"
+        port: 22
+        delay: 10
+        timeout: 600
+      delegate_to: localhost
+
+    - name: Confirm Linux reachable
+      ansible.builtin.ping:
+      delegate_to: "{{ linux_host }}"
