@@ -1,10 +1,10 @@
-- name: Windows → Linux (one-time boot to Ubuntu via bcdedit), orchestrated from controllers
+- name: Windows -> Linux (one-time boot), orchestrated from control
   hosts: controllers
   gather_facts: false
   vars:
     win_host: ws-01-win
     linux_host: ws-01-linux
-    ps_file: 'C:\\ops\\to-linux.ps1'
+    ps_file: 'C:\ops\to-linux.ps1'
 
   tasks:
     - name: Trigger to-linux.ps1 on Windows
