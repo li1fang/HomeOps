@@ -59,6 +59,7 @@
 - 建议输出：`artifacts/test/` 收集检查报告。
 
 ### 3.3 `make itest` — 集成测试（Gate 2）
+- Gate2 参考 docs/verification-spec.md
 - 目的：在自托管 Runner 上对目标主机做 **真实部署前的可验收断言**（或蓝绿/影子环境）。
 - 应执行：`playbooks/tests/verify_observability.yml`（见 §5 验收断言）。
 - 失败处理：自动收集 **最近 200 行服务日志**、**关键 API 响应** 至 `artifacts/itest/` 并作为 CI 工件。
