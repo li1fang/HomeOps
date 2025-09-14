@@ -10,7 +10,7 @@
   gather_facts: false
 
   vars:
-    repo_root: "{{ playbook_dir }}/.."   # 仓库根，便于子 playbook chdir
+    repo_root: "{{ playbook_dir }}/.."
 
   tasks:
     # ------ Probe Linux ------
@@ -18,23 +18,22 @@
       ansible.builtin.ping:
       delegate_to: ws-01-linux
       register: linux_probe
-      ignore_unreachable: true  # 修正点：确保“不可达”不会中断流程
+      ignore_unreachable: true
 
     - name: Set linux_is_online fact
       ansible.builtin.set_fact:
-        linux_is_online: "{{ not linux_probe.unreachable | default(true) }}" # 修正点：根据 unreachable 状态判断
+        linux_is_online: "{{ not linux_probe.unreachable | default(true) }}"
 
     # ------ Probe Windows ------
-    - name: Probe ws-01-win via hostname (SSH-friendly)
-      ansible.builtin.command:
-        cmd: hostname
+    - name: Probe ws-01-win via hostname (using win_shell)
+      ansible.windows.win_shell: hostname
       delegate_to: ws-01-win
       register: win_probe
-      ignore_unreachable: true  # 修正点：确保“不可达”不会中断流程
+      ignore_unreachable: true
 
     - name: Set windows_is_online fact
       ansible.builtin.set_fact:
-        windows_is_online: "{{ not win_probe.unreachable | default(true) and win_probe.rc | default(1) == 0 }}" # 修正点：根据 unreachable 状态判断
+        windows_is_online: "{{ not win_probe.unreachable | default(true) and win_probe.rc | default(1) == 0 }}"
 
     - name: Show probe summary
       ansible.builtin.debug:
