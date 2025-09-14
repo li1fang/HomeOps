@@ -1,72 +1,42 @@
-# Makefile for HomeOps - The Golden Path
-# Gate0: setup | Gate1: lint/test | Gate2: itest | deploy (conditional)
-
-SHELL := /bin/bash
-.ONESHELL:
-.SILENT:
-
-VENV := .venv
-PY := python3
-PIP := $(VENV)/bin/pip
-
-ANSIBLE_PLAYBOOK := $(VENV)/bin/ansible-playbook
-ANSIBLE_LINT := $(VENV)/bin/ansible-lint
-YAMLLINT := $(VENV)/bin/yamllint
-
+# Makefile — HomeOps Golden Path (hotfix: default stdout callback)
 INVENTORY := inventory/hosts.yaml
 ART_TEST := artifacts/test
 ART_ITEST := artifacts/itest
 
-# Ensure venv binaries are on PATH for all commands invoked via make
-export PATH := $(abspath $(VENV)/bin):$(PATH)
+# Force default callback to avoid missing community.general.yaml on fresh machines
+export ANSIBLE_STDOUT_CALLBACK=default
+export ANSIBLE_DISPLAY_SKIPPED_HOSTS=false
 
-.PHONY: setup lint test itest deploy ensure-venv
+.PHONY: setup lint test itest deploy
 
-ensure-venv:
-	if [ ! -x "$(ANSIBLE_PLAYBOOK)" ]; then \
-		echo "--- Bootstrapping Ansible toolchain into $(VENV) ---"; \
-		$(PY) -m venv $(VENV) || (sudo apt-get update && sudo apt-get install -y python3-venv python3-pip && $(PY) -m venv $(VENV)); \
-		$(PIP) install -U pip wheel >/dev/null; \
-		$(PIP) install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32"; \
-	fi
+setup:
+	@echo "--- Local setup (optional) ---"
+	@python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
+	@python3 -m pip install ansible ansible-lint yamllint >/dev/null 2>&1 || true
+	@mkdir -p $(ART_TEST)
+	@echo "tools: $$(ansible --version | head -n1 2>/dev/null || echo 'ansible not found')" > $(ART_TEST)/tools_versions.txt || true
+	@echo "ansible-lint: $$(ansible-lint --version 2>/dev/null || echo 'not found')" >> $(ART_TEST)/tools_versions.txt || true
+	@echo "yamllint: $$(yamllint --version 2>/dev/null || echo 'not found')" >> $(ART_TEST)/tools_versions.txt || true
 
-setup: ensure-venv
-	mkdir -p $(ART_TEST)
-	$(ANSIBLE_PLAYBOOK) -i localhost, -c local playbooks/runner-prepare.yml -e artifacts_dir=$(ART_TEST)
+lint:
+	@echo "--- Gate 1 / Step 1: Static Analysis ---"
+	@ansible-lint || exit $$?
+	@yamllint . || exit $$?
+	@echo "Syntax-check all playbooks..."
+	@set -e; for f in $(shell find playbooks -type f -name "*.yml" 2>/dev/null); do \
+		ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) --syntax-check $$f; \
+	done
 
-lint: ensure-venv
-	echo "--- Running ansible-lint / yamllint / syntax-check ---"
-	$(ANSIBLE_LINT) || exit $$?
-	$(YAMLLINT) .
-	FILES="$$(find playbooks -type f -name "*.yml" 2>/dev/null)"; \
-	if [ -n "$$FILES" ]; then \
-		$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) --syntax-check $$FILES; \
-	else \
-		echo "No playbooks to syntax-check"; \
-	fi
+test:
+	@echo "--- Gate 1 / Step 2: Safe local checks (no remote state change) ---"
+	@mkdir -p $(ART_TEST)
+	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/ping.yml --check --diff
 
-test: ensure-venv
-	echo "--- Running check mode sanity (ping) ---"
-	mkdir -p $(ART_TEST)
-	if [ -f playbooks/ping.yml ]; then \
-		$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/ping.yml --check --diff; \
-	else \
-		echo "No ping.yml; skipping"; \
-	fi
+itest:
+	@echo "--- Gate 2: Integration tests on self-hosted runner ---"
+	@mkdir -p $(ART_ITEST)
+	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
 
-itest: ensure-venv
-	echo "--- Running integration verification ---"
-	mkdir -p $(ART_ITEST)
-	if [ -f playbooks/tests/verify_observability.yml ]; then \
-		$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e artifacts_dir=$(ART_ITEST); \
-	else \
-		echo "verify_observability.yml missing; skipping"; \
-	fi
-
-deploy: ensure-venv
-	echo "--- Deploying Observability Stack ---"
-	if [ -f playbooks/deploy-observability-stack.yml ]; then \
-		$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml; \
-	else \
-		echo "deploy-observability-stack.yml missing"; exit 2; \
-	fi
+deploy:
+	@echo "--- Deploy (conditional; only enabled via CI conditions) ---"
+	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/deploy-observability-stack.yml

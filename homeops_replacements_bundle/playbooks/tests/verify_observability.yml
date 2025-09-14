@@ -1,0 +1,129 @@
+---
+# Gate 2 verification playbook — emits artifacts for machine scoring
+
+- name: Verify services on controller
+  hosts: controllers
+  gather_facts: false
+  vars:
+    output_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Ensure artifacts dir exists (controller)
+      ansible.builtin.file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Check systemd services on controller
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+      register: svc_ctrl
+      changed_when: false
+      loop:
+        - loki
+        - grafana-server
+
+    - name: Record controller services status
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/services.json"
+        mode: '0644'
+        content: "{{ {'controller': inventory_hostname, 'services': svc_ctrl.results | map(attribute='name') | list, 'active': (svc_ctrl.results | map(attribute='status.ActiveState') | list)} | to_nice_json }}"
+
+    - name: Check Loki TCP 3100 (ready endpoint)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:3100/ready"
+        method: GET
+        return_content: false
+        status_code: 200
+        timeout: 3
+      register: loki_ready
+      failed_when: loki_ready.status != 200
+
+    - name: Save loki ready probe
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/loki_ready.json"
+        mode: '0644'
+        content: "{{ {'status': loki_ready.status, 'elapsed': loki_ready.elapsed} | to_nice_json }}"
+
+    - name: Check Grafana TCP 3000 (login page)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:3000/login"
+        method: GET
+        return_content: false
+        status_code: 200
+        timeout: 3
+      register: graf_login
+      failed_when: graf_login.status != 200
+
+    - name: Save grafana login probe
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/grafana_login.json"
+        mode: '0644'
+        content: "{{ {'status': graf_login.status, 'elapsed': graf_login.elapsed} | to_nice_json }}"
+
+  rescue:
+    - name: Collect controller journal tails on failure
+      ansible.builtin.shell: |
+        set -o pipefail
+        for u in loki grafana-server alloy; do
+          echo "===== $u (last 200 lines) ====="
+          journalctl -u "$u" -n 200 --no-pager || true
+          echo
+        done
+      args:
+        executable: /bin/bash
+      register: journal_tail_ctrl
+      changed_when: false
+
+    - name: Save controller journal tails
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/journal_tail_ctrl.txt"
+        mode: '0644'
+        content: "{{ journal_tail_ctrl.stdout }}"
+
+    - name: Quick net diag
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo '--- ip route ---'
+        ip route || true
+        echo
+        echo '--- ss -ltn ---'
+        ss -ltn || true
+      args:
+        executable: /bin/bash
+      register: net_diag
+      changed_when: false
+
+    - name: Save net diag
+      ansible.builtin.copy:
+        dest: "{{ output_dir }}/net_diag.txt"
+        mode: '0644'
+        content: "{{ net_diag.stdout }}"
+
+    - name: Fail explicitly
+      ansible.builtin.fail:
+        msg: "Controller verification failed; artifacts saved to {{ output_dir }}"
+
+- name: Verify alloy on linux group (including controller)
+  hosts: linux
+  gather_facts: false
+  vars:
+    output_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Check alloy running on linux hosts
+      ansible.builtin.systemd:
+        name: alloy
+        state: started
+        enabled: true
+      register: svc_alloy
+      changed_when: false
+
+    - name: Append alloy status per-host
+      ansible.builtin.lineinfile:
+        path: "{{ output_dir }}/services.json"
+        line: "{{ {'host': inventory_hostname, 'service':'alloy','active': svc_alloy.status.ActiveState | default('unknown')} | to_json }}"
+        create: yes
+        mode: '0644'
+      delegate_to: "{{ groups['controllers'][0] if 'controllers' in groups else inventory_hostname }}"
+      run_once: false

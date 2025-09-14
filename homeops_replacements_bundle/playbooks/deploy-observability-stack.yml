@@ -1,0 +1,10 @@
+---
+- name: Placeholder deploy for observability stack (to be implemented in Issue #28)
+  hosts: controllers
+  gather_facts: false
+  tasks:
+    - name: Note
+      ansible.builtin.debug:
+        msg: >
+          Deploy playbook placeholder. Implement Loki + Grafana + Alloy installation
+          and configuration in Issue #28 before enabling AUTO_DEPLOY.
