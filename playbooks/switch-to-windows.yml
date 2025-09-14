@@ -21,8 +21,32 @@
         timeout: 240
       delegate_to: localhost
 
-    - name: Wait for Windows to appear (with WoL fallback)
-      ansible.builtin.import_tasks: ../tasks/wait_for_windows_with_wol.yml
+    - name: Wait for Windows SSH to appear (first window)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[win_host].ansible_host }}"
+        port: 22
+        delay: 10
+        timeout: 300
+      register: wait1
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Wake-on-LAN fallback if Windows still down
+      when: wait1 is failed or (wait1 is defined and (wait1.failed | default(False)))
+      block:
+        - name: Send magic packet
+          community.general.wakeonlan:
+            mac: "{{ hostvars[win_host].wol_mac | default(omit) }}"
+            broadcast: "{{ hostvars[win_host].wol_broadcast | default('255.255.255.255') }}"
+          delegate_to: localhost
+
+        - name: Wait for Windows SSH to appear (second window after WoL)
+          ansible.builtin.wait_for:
+            host: "{{ hostvars[win_host].ansible_host }}"
+            port: 22
+            delay: 5
+            timeout: 300
+          delegate_to: localhost
 
     - name: Confirm Windows reachable
       ansible.windows.win_command: whoami
