@@ -1,0 +1,148 @@
+- name: Deploy observability services on controller
+  hosts: controllers
+  become: true
+  vars:
+    templates_dir: "{{ playbook_dir }}/../templates"
+  tasks:
+    - name: Ensure required packages are installed
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+          - gpg
+        state: present
+        update_cache: true
+
+    - name: Create keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/keyrings/grafana.asc
+        mode: '0644'
+
+    - name: Convert Grafana GPG key to keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.asc
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        state: present
+        filename: grafana
+
+    - name: Install Loki and Grafana
+      ansible.builtin.apt:
+        name:
+          - loki
+          - grafana
+        state: present
+        update_cache: true
+
+    - name: Ensure Loki service is enabled and started
+      ansible.builtin.systemd:
+        name: loki
+        state: started
+        enabled: true
+
+    - name: Create Grafana datasource directory
+      ansible.builtin.file:
+        path: /etc/grafana/provisioning/datasources
+        state: directory
+        mode: '0755'
+
+    - name: Configure Grafana Loki datasource
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/grafana-datasource-loki.yml.j2"
+        dest: /etc/grafana/provisioning/datasources/loki.yml
+        mode: '0644'
+      notify: Restart Grafana
+
+    - name: Ensure Grafana service is enabled and started
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Grafana
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: restarted
+
+- name: Deploy Grafana Alloy on Linux hosts
+  hosts: linux,controllers
+  become: true
+  vars:
+    loki_host: "{{ hostvars['ctrl-linux-01'].ansible_host | default('ctrl-linux-01') }}"
+    templates_dir: "{{ playbook_dir }}/../templates"
+  tasks:
+    - name: Ensure required packages are installed
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - software-properties-common
+          - wget
+          - gpg
+        state: present
+        update_cache: true
+
+    - name: Create keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/keyrings/grafana.asc
+        mode: '0644'
+
+    - name: Convert Grafana GPG key to keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.asc
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Add Grafana APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
+        state: present
+        filename: grafana
+
+    - name: Install Grafana Alloy
+      ansible.builtin.apt:
+        name: alloy
+        state: present
+        update_cache: true
+
+    - name: Create Alloy configuration directory
+      ansible.builtin.file:
+        path: /etc/alloy
+        state: directory
+        mode: '0755'
+
+    - name: Deploy Alloy configuration
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/config.alloy.j2"
+        dest: /etc/alloy/config.alloy
+        mode: '0644'
+      notify: Restart Alloy
+
+    - name: Ensure Alloy service is enabled and started
+      ansible.builtin.systemd:
+        name: alloy
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Alloy
+      ansible.builtin.systemd:
+        name: alloy
+        state: restarted

@@ -19,7 +19,7 @@
       ansible.builtin.package:
         name: snapd
         state: present
-      ignore_errors: true
+      failed_when: false
 
     - name: Enable and start tailscale (snap) if available
       ansible.builtin.shell: |
@@ -58,6 +58,7 @@
       args:
         executable: /bin/bash
       register: paths
+      changed_when: false
 
     - name: Set facts for sudoers
       ansible.builtin.set_fact:
@@ -75,9 +76,12 @@
         validate: "/usr/sbin/visudo -cf %s"
 
     - name: Test sudo -n efibootmgr
-      ansible.builtin.shell: "sudo -n {{ efibootmgr_path }} -v | head -n1"
+      ansible.builtin.shell: |
+        set -o pipefail
+        sudo -n {{ efibootmgr_path }} -v | head -n1
       args:
         executable: /bin/bash
+      changed_when: false
 
     - name: (Optional) Sunshine autostart for current user
       become: false

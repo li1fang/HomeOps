@@ -6,7 +6,7 @@
   gather_facts: false
 
   vars:
-    win_host:   ws-01-win
+    win_host: ws-01-win
     linux_host: ws-01-linux
 
     wol_mac: "9C:6B:00:05:B4:16"
@@ -19,6 +19,7 @@
       delegate_to: "{{ linux_host }}"
       async: 30
       poll: 0
+      changed_when: false
 
     - name: Wait for Linux SSH(22) to drop
       ansible.builtin.wait_for:
@@ -42,7 +43,8 @@
       when: wait1 is failed or (wait1 is defined and (wait1.failed | default(false)))
       block:
         - name: Try 'tailscale wake' first (ignore errors)
-          ansible.builtin.shell: "tailscale wake {{ wol_mac }}"
+          ansible.builtin.command:
+            cmd: "tailscale wake {{ wol_mac }}"
           register: tswake
           changed_when: false
           failed_when: false
@@ -67,3 +69,4 @@
       ansible.builtin.command:
         cmd: hostname
       delegate_to: "{{ win_host }}"
+      changed_when: false
