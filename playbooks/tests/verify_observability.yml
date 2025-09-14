@@ -1,0 +1,17 @@
+---
+- name: Verify Observability Stack (placeholder)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifacts_dir: artifacts/itest
+  tasks:
+    - name: Ensure artifacts directory exists
+      ansible.builtin.file:
+        path: "{{ artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Placeholder verification
+      ansible.builtin.debug:
+        msg: "verify_observability: placeholder PASS (replace with real checks per docs/verification-spec.md)"
