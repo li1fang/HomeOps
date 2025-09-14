@@ -1,6 +1,8 @@
 - name: Deploy observability services on controller
   hosts: controllers
   become: true
+  vars:
+    templates_dir: "{{ playbook_dir }}/../templates"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
@@ -18,10 +20,15 @@
         state: directory
         mode: '0755'
 
-    - name: Add Grafana GPG key
-      ansible.builtin.shell: |
-        wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/grafana.gpg > /dev/null
-      args:
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/keyrings/grafana.asc
+        mode: '0644'
+
+    - name: Convert Grafana GPG key to keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.asc
         creates: /etc/apt/keyrings/grafana.gpg
 
     - name: Add Grafana APT repository
@@ -52,7 +59,7 @@
 
     - name: Configure Grafana Loki datasource
       ansible.builtin.template:
-        src: ../templates/grafana-datasource-loki.yml.j2
+        src: "{{ templates_dir }}/grafana-datasource-loki.yml.j2"
         dest: /etc/grafana/provisioning/datasources/loki.yml
         mode: '0644'
       notify: Restart Grafana
@@ -74,6 +81,7 @@
   become: true
   vars:
     loki_host: "{{ hostvars['ctrl-linux-01'].ansible_host | default('ctrl-linux-01') }}"
+    templates_dir: "{{ playbook_dir }}/../templates"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
@@ -91,10 +99,15 @@
         state: directory
         mode: '0755'
 
-    - name: Add Grafana GPG key
-      ansible.builtin.shell: |
-        wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | tee /etc/apt/keyrings/grafana.gpg > /dev/null
-      args:
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/keyrings/grafana.asc
+        mode: '0644'
+
+    - name: Convert Grafana GPG key to keyring
+      ansible.builtin.command:
+        cmd: gpg --dearmor -o /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.asc
         creates: /etc/apt/keyrings/grafana.gpg
 
     - name: Add Grafana APT repository
@@ -117,7 +130,7 @@
 
     - name: Deploy Alloy configuration
       ansible.builtin.template:
-        src: ../templates/config.alloy.j2
+        src: "{{ templates_dir }}/config.alloy.j2"
         dest: /etc/alloy/config.alloy
         mode: '0644'
       notify: Restart Alloy
