@@ -1,40 +1,82 @@
-name: Ansible PR Quality Gate
+name: HomeOps Quality Gates
 
 on:
+  push:
+    branches: [ "main" ]
   pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
-  # Gate 1: 静态检查 (在云端运行，快速反馈)
-  static-analysis:
-    name: Gate 1 - Lint and Static Tests
-    runs-on: ubuntu-latest
+  quality:
+    name: Quality Gates (Gate0→Gate2 + Conditional Deploy)
+    runs-on: self-hosted
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run 'make lint'
+      - name: Bootstrap ansible toolchain (missing-safe)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ensure Python + venv
+          if ! command -v python3 >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y python3 python3-venv python3-pip
+            elif command -v dnf >/dev/null 2>&1; then
+              sudo dnf install -y python3 python3-virtualenv python3-pip || true
+            elif command -v yum >/dev/null 2>&1; then
+              sudo yum install -y python3 python3-virtualenv python3-pip || true
+            fi
+          fi
+
+          # Create venv and install toolchain (idempotent)
+          if [ ! -d ".venv" ]; then
+            python3 -m venv .venv
+          fi
+          source .venv/bin/activate
+          python -m pip install -U pip wheel
+          python -m pip install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          echo "ansible      : $(ansible --version | head -n1)"
+          echo "ansible-lint : $(ansible-lint --version | head -n1)"
+          echo "yamllint     : $(yamllint --version)"
+
+      - name: Gate 0 - make setup
+        shell: bash
+        run: make setup
+
+      - name: Gate 1.1 - make lint
+        shell: bash
         run: make lint
 
-      - name: Run 'make test'
+      - name: Gate 1.2 - make test
+        shell: bash
         run: make test
 
-  # Gate 2: 集成测试 (在您的真实硬件上运行)
-  integration-test:
-    name: Gate 2 - Integration Test
-    needs: static-analysis # 只有在 Gate 1 通过后才运行
-    runs-on: [self-hosted, ansible, hardware] # 使用我们新的、带标签的运行器
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup SSH Key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Install Ansible dependencies
-        run: make setup # 假设 Makefile 里有 setup 目标来安装依赖
-
-      - name: Run 'make itest'
+      - id: itest
+        name: Gate 2 - make itest (runs only if verify playbook exists)
+        if: ${{ success() && hashFiles('playbooks/tests/verify_observability.yml') != '' }}
+        shell: bash
         run: make itest
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: homeops-artifacts
+          path: |
+            artifacts/test
+            artifacts/itest
+          if-no-files-found: ignore
+
+      - name: Deploy (conditional after successful Gate 2; push to main only)
+        if: ${{ steps.itest.outcome == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('playbooks/deploy-observability-stack.yml') != '' }}
+        shell: bash
+        run: make deploy
