@@ -1,0 +1,37 @@
+- name: Phase 1 - Probe OS Status on ws-01
+  hosts: controllers
+  gather_facts: false
+  tasks:
+    - name: Probe ws-01-linux status
+      ansible.builtin.ping:
+      delegate_to: ws-01-linux
+      ignore_unreachable: true
+      register: linux_status
+
+    - name: Probe ws-01-win status
+      ansible.windows.win_ping:
+      delegate_to: ws-01-win
+      ignore_unreachable: true
+      register: windows_status
+
+    - name: Set status facts for subsequent plays
+      ansible.builtin.set_fact:
+        linux_is_online: "{{ not linux_status.unreachable | default(true) }}"
+        windows_is_online: "{{ not windows_status.unreachable | default(true) }}"
+
+- name: Phase 2 - Switch to Linux if Windows is currently online
+  ansible.builtin.import_playbook: switch-to-linux.yml
+  when: hostvars['ctrl-linux-01'].windows_is_online | default(false)
+
+- name: Phase 3 - Switch to Windows if Linux is currently online
+  ansible.builtin.import_playbook: switch-to-windows.yml
+  when: hostvars['ctrl-linux-01'].linux_is_online | default(false)
+
+- name: Phase 4 - Report if both systems are offline
+  hosts: controllers
+  gather_facts: false
+  tasks:
+    - name: Fail if both systems are unreachable
+      ansible.builtin.fail:
+        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check the machine's power state."
+      when: not (hostvars['ctrl-linux-01'].linux_is_online | default(false)) and not (hostvars['ctrl-linux-01'].windows_is_online | default(false))
