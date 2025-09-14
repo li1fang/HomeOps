@@ -1,19 +1,27 @@
-- name: Linux -> Windows (one-time boot), orchestrated from control
+---
+# Switch ws-01: Linux → Windows (one-time boot), orchestrated from controller
+
+- name: Linux -> Windows (one-time boot)
   hosts: controllers
   gather_facts: false
+
   vars:
-    win_host: ws-01-win
+    win_host:   ws-01-win
     linux_host: ws-01-linux
 
+    # WOL 参数（tailscale wake 优先，失败再 L2 广播；如非同一二层，可只依赖 tailscale）
+    wol_mac: "9C:6B:00:05:B4:16"
+    wol_broadcast: "192.168.1.255"
+
   tasks:
-    - name: Trigger to-windows.sh on Linux
+    - name: Trigger to-windows.sh on Linux (async)
       ansible.builtin.command:
         cmd: "bash -lc /home/{{ hostvars[linux_host].ansible_user }}/ops/to-windows.sh"
       delegate_to: "{{ linux_host }}"
       async: 30
       poll: 0
 
-    - name: Wait for Linux SSH to drop
+    - name: Wait for Linux SSH(22) to drop
       ansible.builtin.wait_for:
         host: "{{ hostvars[linux_host].ansible_host }}"
         port: 22
@@ -21,7 +29,7 @@
         timeout: 240
       delegate_to: localhost
 
-    - name: Wait for Windows SSH to appear (first window)
+    - name: Wait for Windows SSH(22) to appear (first window)
       ansible.builtin.wait_for:
         host: "{{ hostvars[win_host].ansible_host }}"
         port: 22
@@ -32,22 +40,31 @@
       delegate_to: localhost
 
     - name: Wake-on-LAN fallback if Windows still down
-      when: wait1 is failed or (wait1 is defined and (wait1.failed | default(False)))
+      when: wait1 is failed or (wait1 is defined and (wait1.failed | default(false)))
       block:
-        - name: Send magic packet
-          community.general.wakeonlan:
-            mac: "{{ hostvars[win_host].wol_mac | default(omit) }}"
-            broadcast: "{{ hostvars[win_host].wol_broadcast | default('255.255.255.255') }}"
+        - name: Try 'tailscale wake' first (ignore errors)
+          ansible.builtin.shell: "tailscale wake {{ wol_mac }}"
+          register: tswake
+          changed_when: false
+          failed_when: false
           delegate_to: localhost
 
-        - name: Wait for Windows SSH to appear (second window after WoL)
+        - name: Fallback to L2 WOL if needed
+          when: tswake is failed or (tswake.rc | default(0)) != 0
+          community.general.wakeonlan:
+            mac: "{{ wol_mac }}"
+            broadcast: "{{ wol_broadcast }}"
+          delegate_to: localhost
+
+        - name: Wait for Windows SSH(22) to appear (after WOL)
           ansible.builtin.wait_for:
             host: "{{ hostvars[win_host].ansible_host }}"
             port: 22
             delay: 5
-            timeout: 300
+            timeout: 600
           delegate_to: localhost
 
-    - name: Confirm Windows reachable
-      ansible.windows.win_command: whoami
+    - name: Confirm Windows reachable via 'hostname'
+      ansible.builtin.command:
+        cmd: hostname
       delegate_to: "{{ win_host }}"
