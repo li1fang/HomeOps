@@ -14,27 +14,27 @@
 
   tasks:
     # ------ Probe Linux ------
-    - name: Probe ws-01-linux via ping (expect 'pong')
+    - name: Probe ws-01-linux via ping
       ansible.builtin.ping:
       delegate_to: ws-01-linux
       register: linux_probe
-      ignore_errors: true
+      ignore_unreachable: true  # 修正点：确保“不可达”不会中断流程
 
     - name: Set linux_is_online fact
       ansible.builtin.set_fact:
-        linux_is_online: "{{ (linux_probe is defined) and (linux_probe.ping | default('') == 'pong') }}"
+        linux_is_online: "{{ not linux_probe.unreachable | default(true) }}" # 修正点：根据 unreachable 状态判断
 
     # ------ Probe Windows ------
-    - name: Probe ws-01-win via 'hostname' (SSH-friendly)
+    - name: Probe ws-01-win via hostname (SSH-friendly)
       ansible.builtin.command:
         cmd: hostname
       delegate_to: ws-01-win
       register: win_probe
-      ignore_errors: true
+      ignore_unreachable: true  # 修正点：确保“不可达”不会中断流程
 
     - name: Set windows_is_online fact
       ansible.builtin.set_fact:
-        windows_is_online: "{{ (win_probe is defined) and (win_probe.rc | default(1) == 0) }}"
+        windows_is_online: "{{ not win_probe.unreachable | default(true) and win_probe.rc | default(1) == 0 }}" # 修正点：根据 unreachable 状态判断
 
     - name: Show probe summary
       ansible.builtin.debug:
@@ -43,27 +43,27 @@
           windows_is_online: "{{ windows_is_online | default(false) }}"
 
     # ------ Decide & Switch ------
-    - name: Decide and Switch to Linux (Windows online, Linux offline)
+    - name: Decide and Switch to Linux (if Windows online, Linux offline)
       ansible.builtin.command:
-        cmd: ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml
+        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml"
         chdir: "{{ repo_root }}"
       when: (windows_is_online | default(false)) and not (linux_is_online | default(false))
       changed_when: true
 
-    - name: Decide and Switch to Windows (Linux online, Windows offline)
+    - name: Decide and Switch to Windows (if Linux online, Windows offline)
       ansible.builtin.command:
-        cmd: ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-windows.yml
+        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-windows.yml"
         chdir: "{{ repo_root }}"
       when: (linux_is_online | default(false)) and not (windows_is_online | default(false))
       changed_when: true
 
     # ------ Report edge cases ------
-    - name: Both offline → fail
+    - name: Report if both systems are offline
       ansible.builtin.fail:
-        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check machine power / network."
+        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check the machine's power state."
       when: not (linux_is_online | default(false)) and not (windows_is_online | default(false))
 
-    - name: Both online → no-op
+    - name: Report if both systems appear online
       ansible.builtin.debug:
         msg: "Both ws-01-linux and ws-01-win appear online. Not toggling (no-op)."
       when: (linux_is_online | default(false)) and (windows_is_online | default(false))
