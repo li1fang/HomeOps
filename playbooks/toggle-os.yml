@@ -1,13 +1,9 @@
----
-# Decide current OS and trigger the opposite switch.
-# Inventory groups: controllers / windows(ws-01-win) / linux(ws-01-linux)
-
 - name: Smartly Toggle OS on ws-01 (decide & switch)
   hosts: controllers
   gather_facts: false
 
   vars:
-    repo_root: "{{ playbook_dir }}/.."   # repo root for nested calls
+    repo_root: "{{ playbook_dir }}/.."   # 仓库根，便于子 playbook chdir
 
   tasks:
     # ------ Probe Linux ------
@@ -22,16 +18,15 @@
         linux_is_online: "{{ (linux_probe is defined) and (linux_probe.ping | default('') == 'pong') }}"
 
     # ------ Probe Windows ------
-    - name: Probe ws-01-win via 'hostname' (SSH-friendly)
-      ansible.builtin.command:
-        cmd: hostname
+    - name: Probe ws-01-win via win_ping (most reliable for SSH)
+      ansible.windows.win_ping:
       delegate_to: ws-01-win
       register: win_probe
       ignore_unreachable: true
 
     - name: Set windows_is_online fact
       ansible.builtin.set_fact:
-        windows_is_online: "{{ (win_probe is defined) and (win_probe.rc | default(1) == 0) }}"
+        windows_is_online: "{{ (win_probe is defined) and (win_probe.ping | default('') == 'pong') }}"
 
     - name: Show probe summary
       ansible.builtin.debug:
@@ -40,27 +35,27 @@
           windows_is_online: "{{ windows_is_online | default(false) }}"
 
     # ------ Decide & Switch ------
-    - name: Switch to Linux (Windows online & Linux offline)
+    - name: Decide and Switch to Linux (if Windows online, Linux offline)
       ansible.builtin.command:
-        cmd: ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml
+        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml"
         chdir: "{{ repo_root }}"
       when: (windows_is_online | default(false)) and not (linux_is_online | default(false))
       changed_when: true
 
-    - name: Switch to Windows (Linux online & Windows offline)
+    - name: Decide and Switch to Windows (if Linux online, Windows offline)
       ansible.builtin.command:
-        cmd: ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-windows.yml
+        cmd: "ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-windows.yml"
         chdir: "{{ repo_root }}"
       when: (linux_is_online | default(false)) and not (windows_is_online | default(false))
       changed_when: true
 
-    # ------ Edge cases ------
-    - name: Both offline → fail
+    # ------ Report edge cases ------
+    - name: Report if both systems are offline
       ansible.builtin.fail:
-        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check machine power / network."
+        msg: "Both ws-01-linux and ws-01-win are unreachable. Please check the machine's power state."
       when: not (linux_is_online | default(false)) and not (windows_is_online | default(false))
 
-    - name: Both online → no-op
+    - name: Report if both systems appear online
       ansible.builtin.debug:
         msg: "Both ws-01-linux and ws-01-win appear online. Not toggling (no-op)."
       when: (linux_is_online | default(false)) and (windows_is_online | default(false))
