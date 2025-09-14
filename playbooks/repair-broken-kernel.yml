@@ -2,29 +2,23 @@
   hosts: ws-01-linux
   become: true
   tasks:
-    - name: Force remove broken NVIDIA meta-package
-      ansible.builtin.dpkg:
-        name: linux-modules-nvidia-550-generic-hwe-24.04
-        state: absent
-        force: yes
-
-    - name: Force remove all related 6.14.0-29 packages
+    - name: Force remove all related broken packages using apt
       ansible.builtin.apt:
         name:
           - linux-image-6.14.0-29-generic
           - linux-headers-6.14.0-29-generic
           - linux-modules-nvidia-550-6.14.0-29-generic
+          - linux-modules-nvidia-550-generic-hwe-24.04
           - linux-signatures-nvidia-6.14.0-29-generic
         state: absent
-        autoremove: yes
-        purge: yes
-        force: yes
+        autoremove: true
+        purge: true
 
-    - name: Run 'apt --fix-broken install'
+    - name: Run 'apt --fix-broken install' to ensure system health
       ansible.builtin.apt:
-        fix_broken: yes
+        fix_broken: true
 
-    - name: Final update to GRUB
+    - name: Final update to GRUB to remove old entries
       ansible.builtin.command:
         cmd: update-grub
       changed_when: false

@@ -6,7 +6,7 @@
   gather_facts: false
 
   vars:
-    win_host:   ws-01-win
+    win_host: ws-01-win
     linux_host: ws-01-linux
 
   tasks:
