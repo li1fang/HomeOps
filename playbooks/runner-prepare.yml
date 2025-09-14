@@ -1,0 +1,40 @@
+---
+- hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure Python and pip are present
+      become: true
+      ansible.builtin.package:
+        name:
+          - python3
+          - python3-pip
+        state: present
+
+    - name: Install Ansible tooling
+      become: true
+      ansible.builtin.pip:
+        name:
+          - ansible-core
+          - ansible-lint
+          - yamllint
+        state: latest
+
+    - name: Ensure artifacts directory exists
+      ansible.builtin.file:
+        path: artifacts/test
+        state: directory
+        mode: '0755'
+
+    - name: Collect tool versions
+      ansible.builtin.shell: |
+        set -e
+        ansible --version | head -1
+        ansible-lint --version
+        yamllint --version
+      register: tools
+      changed_when: false
+
+    - name: Write tool versions
+      ansible.builtin.copy:
+        dest: artifacts/test/tools_versions.txt
+        content: "{{ tools.stdout }}"

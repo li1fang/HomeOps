@@ -1,40 +1,44 @@
 name: Ansible PR Quality Gate
 
 on:
+  push:
+    branches: [ main ]
   pull_request:
 
 jobs:
-  # Gate 1: 静态检查 (在云端运行，快速反馈)
-  static-analysis:
-    name: Gate 1 - Lint and Static Tests
-    runs-on: ubuntu-latest
+  gate1-static:
+    name: Gate 1 - lint & local tests
+    runs-on: [self-hosted, ansible, hardware]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run 'make lint'
+      - uses: actions/checkout@v4
+      - name: Setup runner tools
+        run: make setup
+      - name: Run make lint
         run: make lint
-
-      - name: Run 'make test'
+      - name: Run make test
         run: make test
 
-  # Gate 2: 集成测试 (在您的真实硬件上运行)
-  integration-test:
-    name: Gate 2 - Integration Test
-    needs: static-analysis # 只有在 Gate 1 通过后才运行
-    runs-on: [self-hosted, ansible, hardware] # 使用我们新的、带标签的运行器
-
+  gate2-integration:
+    name: Gate 2 - integration (machine-verifiable)
+    needs: gate1-static
+    runs-on: [self-hosted, ansible, hardware]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup SSH Key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Install Ansible dependencies
-        run: make setup # 假设 Makefile 里有 setup 目标来安装依赖
-
-      - name: Run 'make itest'
+      - uses: actions/checkout@v4
+      - name: Run make itest
         run: make itest
+      - name: Upload itest artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: itest-artifacts
+          path: artifacts/itest
+
+  deploy:
+    name: Deploy on success
+    needs: gate2-integration
+    if: needs.gate2-integration.result == 'success'
+    runs-on: [self-hosted, ansible, hardware]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: make deploy
