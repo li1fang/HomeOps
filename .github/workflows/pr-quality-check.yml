@@ -1,24 +1,45 @@
-name: Ansible Quality Check
+name: Ansible PR Quality Gate
 
 on:
   pull_request:
 
 jobs:
-  lint-and-syntax-check:
-    name: Ansible Lint and Syntax Check
-    runs-on: self-hosted
-
+  static-analysis:
+    name: Lint and Syntax Check
+    runs-on: ubuntu-latest # 静态检查用云端服务器即可，更快更省资源
     steps:
       - name: 1. Checkout code
         uses: actions/checkout@v4
 
       - name: 2. Install Ansible and ansible-lint
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible ansible-lint
+          python3 -m pip install --user ansible ansible-lint
 
       - name: 3. Run ansible-lint
         run: ansible-lint playbooks/*.yml
 
       - name: 4. Run ansible-playbook syntax-check
         run: ansible-playbook -i inventory/hosts.yaml --syntax-check playbooks/*.yml
+
+  integration-test:
+    name: Integration Test on Real Hardware
+    runs-on: self-hosted
+    needs: static-analysis # <-- 关键：只有在静态分析成功后，才进行此阶段
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: 3. Install Ansible dependencies
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: 4. Run Bootstrap Playbooks (Non-blocking)
+        run: |
+          # 运行引导剧本，它们是幂等的，是最好的集成测试
+          ansible-playbook -i inventory/hosts.yaml playbooks/bootstrap-linux.yml || true
+          ansible-playbook -i inventory/hosts.yaml playbooks/bootstrap-windows.yml || true
