@@ -13,13 +13,32 @@
 
 ---
 
+## 2. 项目导航（Project Layout）
+
+- `inventory/hosts.yaml` — Ansible 主机清单（包含 `controllers` 与 `linux` 分组）。
+- `playbooks/` — 所有剧本；测试剧本在 `playbooks/tests/`。
+- `docs/verification-spec.md` — **机判验收口径**（唯一权威）。
+- `.github/workflows/pr-quality-check.yml` — CI 金路径编排。
+
+---
+
 ## 3. 金路径命令（Make Targets Contract）
 
 > 人/CI/代理一律只使用以下四个目标。**不要**引入平行命令。
 
-### 3.3 `make itest` — 集成测试（Gate 2 / 自托管 Runner）
+### 3.1 `make setup` — 本地工具自举（可选）
+- 目的：在本地开发机安装 Ansible 工具链（CI 自有安装逻辑，不依赖此步骤）。
+
+### 3.2 `make lint` — 静态检查（Gate 1 / Step 1）
+- 目的：风格/语法/最佳实践早期拦截。
+- 参考实现：`ansible-lint`、`yamllint .`、`ansible-playbook --syntax-check`
+
+### 3.3 `make test` — 本地无破坏校验（Gate 1 / Step 2）
+- 目的：在 **check mode** 与二次运行校验幂等性，**不触达真实变更**；默认仅对 `localhost` 做安全探针。
+
+### 3.4 `make itest` — 集成测试（Gate 2 / 自托管 Runner）
 - 目的：在真实硬件上执行**可机判验收**；
-- **判分标准：详见** [`docs/verification-spec.md`](docs/verification-spec.md)（唯一权威）；
+- **判分标准**：详见 [`docs/verification-spec.md`](docs/verification-spec.md)；
 - 默认执行：`playbooks/tests/verify_observability.yml`（输出到 `artifacts/itest/`）。
 
 ### 3.5 `make deploy` — 部署与回归（条件执行）
@@ -43,3 +62,10 @@
     -->
     ```
 - **职责单一**：一个 PR / commit 只解决一个 Issue。
+
+---
+
+## 5. 注意事项（Hints for Agents）
+
+- 遇到失败，请将 CI 工件（`artifacts/itest/*`）的相关片段原样贴回，按 `docs/verification-spec.md` 的条目逐一修复。
+- 不要并行处理多个 Issue；**串行**推进以避免重状态环境互相干扰。
