@@ -8,8 +8,10 @@ on:
         required: true
         type: choice
         options:
+          - cleanup-boot-entries.yml
           - repair-boot-final.yml
           - deploy-alloy.yml
+          - run-sealos-langgraph.yml
         default: 'cleanup-boot-entries.yml'
 
 jobs:
