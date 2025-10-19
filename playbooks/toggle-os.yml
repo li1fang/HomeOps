@@ -1,3 +1,4 @@
+---
 - name: Smartly Toggle OS on ws-01 (decide & switch)
   hosts: controllers
   gather_facts: false

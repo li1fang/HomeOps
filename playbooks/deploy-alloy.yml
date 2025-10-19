@@ -1,6 +1,9 @@
+---
 - name: Deploy Grafana Alloy on Controllers
   hosts: controllers
   become: true
+  vars:
+    templates_root: "{{ lookup('env', 'PWD') }}/templates"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
@@ -18,11 +21,22 @@
         state: directory
         mode: '0755'
 
-    - name: Add Grafana GPG key (modern method)
-      ansible.builtin.shell: |
-        wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
+    - name: Download Grafana GPG key
+      ansible.builtin.get_url:
+        url: https://apt.grafana.com/gpg.key
+        dest: /etc/apt/keyrings/grafana.gpg.asc
+        mode: '0644'
+
+    - name: Convert Grafana GPG key to keyring format
+      ansible.builtin.command:
+        cmd: gpg --dearmor --yes --output /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.gpg.asc
       args:
-        creates: /etc/apt/keyrings/grafana.gpg # This makes the task idempotent
+        creates: /etc/apt/keyrings/grafana.gpg
+
+    - name: Ensure Grafana keyring permissions
+      ansible.builtin.file:
+        path: /etc/apt/keyrings/grafana.gpg
+        mode: '0644'
 
     - name: Add Grafana APT repository (modern method)
       ansible.builtin.apt_repository:
@@ -35,7 +49,6 @@
         state: present
         update_cache: true
 
-    # ... (后续的配置文件部署和服务启动任务保持不变) ...
     - name: Create Alloy configuration directory
       ansible.builtin.file:
         path: /etc/alloy
@@ -44,7 +57,7 @@
 
     - name: Deploy the initial Alloy configuration file
       ansible.builtin.template:
-        src: ../templates/config.alloy.j2
+        src: "{{ templates_root }}/config.alloy.j2"
         dest: /etc/alloy/config.alloy
         mode: '0644'
       notify: Restart Alloy

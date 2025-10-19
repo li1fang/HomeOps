@@ -1,3 +1,4 @@
+---
 - name: Surgically remove broken kernel packages from ws-01-linux
   hosts: ws-01-linux
   become: true
@@ -15,8 +16,14 @@
         purge: true
 
     - name: Run 'apt --fix-broken install' to ensure system health
-      ansible.builtin.apt:
-        fix_broken: true
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - --fix-broken
+          - install
+          - -y
+      register: fix_broken
+      changed_when: "'0 upgraded' not in fix_broken.stdout"
 
     - name: Final update to GRUB to remove old entries
       ansible.builtin.command:

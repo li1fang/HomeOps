@@ -1,3 +1,4 @@
+---
 - name: Bootstrap Windows nodes (OpenSSH + to-linux.ps1)
   hosts: windows
   gather_facts: false

@@ -1,0 +1,15 @@
+skip_list:
+  - fqcn-builtins  # allow short builtins in local playbooks
+warn_list:
+  - experimental
+parseable: true
+exclude_paths:
+  - .venv/
+  - artifacts/
+  - collections/
+  - homeops_replacements_bundle/
+  - .github/
+  - docs/
+  - requirements.txt
+  - playbooks/k8s/
+  - playbooks/run-sealos-langgraph.yml

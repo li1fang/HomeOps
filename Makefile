@@ -1,41 +1,78 @@
-# Makefile — Option A: no local .venv dependency; tools expected on PATH (workflow injects)
+# Makefile — reproducible tooling with local venv + collection cache
 INVENTORY := inventory/hosts.yaml
 ART_TEST := artifacts/test
 ART_ITEST := artifacts/itest
 
-export ANSIBLE_STDOUT_CALLBACK=ansible.builtin.yaml
-export ANSIBLE_DISPLAY_SKIPPED_HOSTS=false
+VENV_DIR := .venv
+VENV_BIN := $(VENV_DIR)/bin
+VENV_PYTHON := $(VENV_BIN)/python
+VENV_MARKER := $(VENV_DIR)/.bootstrapped
+VENV_ABS := $(abspath $(VENV_DIR))
 
-.PHONY: setup lint test itest deploy
+COLLECTIONS_DIR := collections
+COLLECTIONS_MARKER := $(COLLECTIONS_DIR)/.install-complete
 
-setup:
-	@echo "--- Gate0: record tool versions (PATH-venv expected) ---"
+ANSIBLE_CMD := $(VENV_BIN)/ansible
+ANSIBLE_PLAYBOOK := $(VENV_BIN)/ansible-playbook
+ANSIBLE_LINT := $(VENV_BIN)/ansible-lint
+YAMLLINT := $(VENV_BIN)/yamllint
+GALAXY := $(VENV_BIN)/ansible-galaxy
+LINT_PATHS := playbooks group_vars host_vars inventory templates
+
+export ANSIBLE_CONFIG := $(CURDIR)/ansible.cfg
+export ANSIBLE_STDOUT_CALLBACK ?= ansible.builtin.yaml
+export ANSIBLE_DISPLAY_SKIPPED_HOSTS ?= false
+export ANSIBLE_LINT_WARNINGS ?= skip-path-validation
+
+.PHONY: setup lint test itest deploy clean
+
+$(VENV_MARKER): requirements.txt
+	@echo "--- creating local venv at $(VENV_ABS) ---"
+	@python3 -m venv $(VENV_DIR)
+	@$(VENV_PYTHON) -m pip install --upgrade pip wheel
+	@$(VENV_PYTHON) -m pip install --requirement requirements.txt
+	@touch $@
+
+$(COLLECTIONS_MARKER): requirements.yml $(VENV_MARKER)
+	@echo "--- installing Ansible collections into $(abspath $(COLLECTIONS_DIR)) ---"
+	@mkdir -p $(COLLECTIONS_DIR)
+	@$(GALAXY) collection install -r requirements.yml -p $(COLLECTIONS_DIR) --force
+	@touch $@
+
+setup: $(VENV_MARKER) $(COLLECTIONS_MARKER)
+	@echo "--- Gate0: bootstrap reproducible toolchain ---"
 	@mkdir -p $(ART_TEST)
-	@{ \
-	  ansible --version | head -n1 || echo 'ansible not found'; \
-	  ansible-lint --version || echo 'ansible-lint not found'; \
-	  yamllint --version || echo 'yamllint not found'; \
-	} > $(ART_TEST)/tools_versions.txt
+	@$(VENV_PYTHON) scripts/record_tool_versions.py \
+	--venv-path "$(VENV_ABS)" \
+	--python "$(VENV_PYTHON)" \
+	--ansible "$(ANSIBLE_CMD)" \
+	--ansible-lint "$(ANSIBLE_LINT)" \
+	--yamllint "$(YAMLLINT)" \
+	--output "$(ART_TEST)/tools_versions.txt"
 
-lint:
+lint: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate1/Step1: Static Analysis ---"
-	@ansible-lint || exit $$?
-	@yamllint . || exit $$?
-	@echo "Syntax-check all playbooks..."
-	@set -e; for f in $(shell find playbooks -type f -name "*.yml" 2>/dev/null); do \
-		ansible-playbook -i $(INVENTORY) --syntax-check $$f; \
-	done
+	@$(ANSIBLE_LINT) $(LINT_PATHS)
+	@$(YAMLLINT) $(LINT_PATHS) .github/workflows
+	@echo "--- Syntax-check all playbooks ---"
+	@$(VENV_PYTHON) scripts/syntax_check_playbooks.py \
+	--ansible-playbook "$(ANSIBLE_PLAYBOOK)" \
+	--inventory "$(INVENTORY)" \
+	--playbooks-root "playbooks"
 
-test:
+test: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate1/Step2: Safe local checks ---"
 	@mkdir -p $(ART_TEST)
-	@ansible-playbook -i $(INVENTORY) playbooks/ping.yml --check --diff
+	@bash -c "set -euo pipefail; '$(ANSIBLE_PLAYBOOK)' -i localhost, -c local playbooks/ping.yml --check --diff | tee '$(ART_TEST)/ping.log'"
 
-itest:
+itest: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate2: Integration tests on self-hosted runner ---"
 	@mkdir -p $(ART_ITEST)
-	@ansible-playbook -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
 
-deploy:
+deploy: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Deploy (conditional) ---"
-	@ansible-playbook -i $(INVENTORY) playbooks/deploy-observability-stack.yml
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml
+
+clean:
+	@rm -rf $(VENV_DIR) $(COLLECTIONS_DIR) $(ART_TEST) $(ART_ITEST)

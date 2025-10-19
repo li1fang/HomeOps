@@ -1,3 +1,4 @@
+---
 - name: Phase 1 - Probe OS Status on ws-01
   hosts: controllers
   gather_facts: false
