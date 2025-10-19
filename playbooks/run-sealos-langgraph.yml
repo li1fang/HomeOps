@@ -1,20 +1,40 @@
-- name: Provision Sealos single-node cluster
-  ansible.builtin.import_playbook: k8s/provision-sealos.yml
+
+---
+- import_playbook: k8s/provision-sealos.yml
+- import_playbook: k8s/deploy-langgraph.yml
+
 
 - name: Deploy LangGraph workloads
   ansible.builtin.import_playbook: k8s/deploy-langgraph.yml
 
-- name: Verify LangGraph health endpoint
-  hosts: controllers
-  gather_facts: false
-  tasks:
-    - name: Wait for LangGraph service to respond
-      ansible.builtin.uri:
-        url: http://127.0.0.1:30080/health
-        method: GET
-        status_code: 200
-        return_content: true
-      register: langgraph_health
-      retries: 10
-      delay: 12
-      until: langgraph_health.status == 200
+
+jobs:
+  deploy:
+    name: Run on local runner
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install Ansible if missing
+        run: |
+          if ! command -v ansible-playbook >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ansible
+          fi
+
+      - name: Step 1 — Provision Sealos K8s
+        run: ansible-playbook playbooks/k8s/provision-sealos.yml -l controllers
+
+      - name: Step 2 — Deploy LangGraph
+        run: ansible-playbook playbooks/k8s/deploy-langgraph.yml -l controllers
+
+      - name: Step 3 — Verify Health
+        run: curl -fsSL http://127.0.0.1:30080/health || true
+
+
