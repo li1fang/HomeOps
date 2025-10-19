@@ -1,0 +1,107 @@
+---
+- name: Install Sealos and bootstrap single-node Kubernetes
+  hosts: controllers
+  become: true
+  gather_facts: true
+
+  vars:
+    # Adjustable versions (pin as needed)
+    sealos_version: "v4.3.9"   # <- 如果需要其他版本，改这里
+    k8s_image: "labring/kubernetes:v1.29.4"
+    cni_image: "labring/calico:v3.26.1"
+    helm_image: "labring/helm:v3.12.0"
+
+    install_dir: /usr/local/bin
+
+    # Map Ansible arch to Sealos asset arch
+    sealos_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+      arm64: arm64
+
+  tasks:
+    - name: Compute Sealos arch
+      set_fact:
+        sealos_arch: "{{ sealos_arch_map[ansible_architecture] | default('amd64') }}"
+
+    - name: Install runtime dependencies (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+        state: present
+        name:
+          - curl
+          - ca-certificates
+          - tar
+          - conntrack
+          - socat
+          - iptables
+          - ebtables
+      when: ansible_os_family == "Debian"
+
+    - name: Check if sealos installed
+      stat:
+        path: "{{ install_dir }}/sealos"
+      register: sealos_bin
+
+    - name: Download Sealos tarball (if missing)
+      get_url:
+        # 注意：如遇 404，请先手动确认该版本是否存在（仅需修改 sealos_version 即可）
+        url: "https://github.com/labring/sealos/releases/download/{{ sealos_version }}/sealos_{{ sealos_version | regex_replace('^v','') }}_linux_{{ sealos_arch }}.tar.gz"
+        dest: "/tmp/sealos.tar.gz"
+        mode: "0644"
+      when: not sealos_bin.stat.exists
+
+    - name: Unpack Sealos to {{ install_dir }}
+      unarchive:
+        src: "/tmp/sealos.tar.gz"
+        dest: "{{ install_dir }}"
+        remote_src: true
+      when: not sealos_bin.stat.exists
+
+    - name: Ensure sealos is executable
+      file:
+        path: "{{ install_dir }}/sealos"
+        mode: "0755"
+        state: file
+
+    - name: Ensure kube dir for root
+      file:
+        path: "/root/.kube"
+        state: directory
+        mode: "0750"
+        owner: root
+        group: root
+
+    - name: Check cluster by kube-apiserver process
+      shell: "ps aux | grep -q '[k]ube-apiserver'"
+      register: cluster_running
+      failed_when: false
+      changed_when: false
+
+    - name: Bootstrap single-node cluster with Sealos (idempotent)
+      shell: |
+        set -euo pipefail
+        {{ install_dir }}/sealos run               {{ k8s_image }}               {{ cni_image }}               {{ helm_image }}
+      args:
+        executable: /bin/bash
+      when: cluster_running.rc != 0
+
+    - name: Ensure kubectl present (download stable if missing)
+      shell: |
+        set -euo pipefail
+        if ! command -v kubectl >/dev/null 2>&1; then
+          arch="{{ sealos_arch }}"
+          curl -fsSL https://dl.k8s.io/release/stable.txt -o /tmp/k8s_stable.txt
+          ver="$(cat /tmp/k8s_stable.txt)"
+          curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${ver}/bin/linux/${arch}/kubectl"
+          chmod +x /usr/local/bin/kubectl
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Wait for node Ready
+      shell: "kubectl get nodes --no-headers | awk '{print $2}' | grep -q 'Ready'"
+      register: nodes_ready
+      retries: 20
+      delay: 10
+      until: nodes_ready.rc == 0

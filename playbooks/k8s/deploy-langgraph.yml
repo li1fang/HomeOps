@@ -1,0 +1,122 @@
+---
+- name: Deploy a minimal LangGraph server on Kubernetes
+  hosts: controllers
+  become: true
+  gather_facts: false
+
+  vars:
+    namespace: "langgraph"
+    service_port: 8000
+    node_port: 30080
+    langgraph_version: "1.0.0rc1"
+
+  tasks:
+    - name: Ensure namespace exists
+      shell: |
+        set -euo pipefail
+        kubectl get ns {{ namespace }} >/dev/null 2>&1 || kubectl create ns {{ namespace }}
+      args: { executable: /bin/bash }
+      register: ns_out
+      changed_when: "'created' in ns_out.stdout"
+
+    - name: Apply ConfigMap (app.py)
+      shell: |
+        set -euo pipefail
+        cat <<'YAML' | kubectl -n {{ namespace }} apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: langgraph-app
+        data:
+          app.py: |
+            from fastapi import FastAPI
+            app = FastAPI()
+
+            @app.get("/health")
+            def health():
+                return {"ok": True}
+
+            # Minimal LangGraph v1 demo
+            try:
+                from langgraph.graph import StateGraph, END
+                def inc(x): return {"n": x["n"] + 1}
+                g = StateGraph({"n": int})
+                g.add_node("inc", inc)
+                g.set_entry_point("inc")
+                g.add_edge("inc", END)
+                graph = g.compile()
+
+                @app.post("/run")
+                def run(payload: dict):
+                    return graph.invoke(payload)
+            except Exception as e:
+                @app.get("/_import_error")
+                def import_error():
+                    return {"error": str(e)}
+        YAML
+      args: { executable: /bin/bash }
+
+    - name: Apply Deployment and Service
+      shell: |
+        set -euo pipefail
+        cat <<'YAML' | kubectl -n {{ namespace }} apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: langgraph-server
+          labels: { app: langgraph-server }
+        spec:
+          replicas: 1
+          selector: { matchLabels: { app: langgraph-server } }
+          template:
+            metadata: { labels: { app: langgraph-server } }
+            spec:
+              containers:
+                - name: app
+                  image: python:3.11-slim
+                  imagePullPolicy: IfNotPresent
+                  ports: [{ containerPort: {{ service_port }} }]
+                  command: ["/bin/bash","-lc"]
+                  args:
+                    - >
+                      pip install --no-cache-dir "fastapi>=0.115" "uvicorn[standard]>=0.30"
+                      "langgraph=={{ langgraph_version }}" &&
+                      uvicorn app:app --host 0.0.0.0 --port {{ service_port }};
+                  volumeMounts:
+                    - name: app-src
+                      mountPath: /app
+                  workingDir: /app
+              volumes:
+                - name: app-src
+                  configMap:
+                    name: langgraph-app
+                    items:
+                      - key: app.py
+                        path: app.py
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: langgraph-svc
+        spec:
+          type: NodePort
+          selector: { app: langgraph-server }
+          ports:
+            - name: http
+              port: {{ service_port }}
+              targetPort: {{ service_port }}
+              nodePort: {{ node_port }}
+        YAML
+      args: { executable: /bin/bash }
+
+    - name: Wait for Deployment rollout
+      shell: "kubectl -n {{ namespace }} rollout status deploy/langgraph-server --timeout=300s"
+      args: { executable: /bin/bash }
+
+    - name: Smoke check: /health
+      shell: "curl -fsS http://127.0.0.1:{{ node_port }}/health"
+      register: health
+      retries: 30
+      delay: 5
+      until: health.rc == 0
+      args: { executable: /bin/bash }
