@@ -1,3 +1,4 @@
+---
 - name: Force ws-01-linux to boot stable kernel
   hosts: ws-01-linux
   become: true

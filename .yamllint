@@ -1,0 +1,17 @@
+extends: default
+ignore: |
+  .venv/
+  artifacts/
+  collections/
+  homeops_replacements_bundle/
+  **/__pycache__/
+  docs/
+  playbooks/k8s/
+  playbooks/run-sealos-langgraph.yml
+rules:
+  line-length:
+    max: 160
+    level: warning
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no']
+    level: warning

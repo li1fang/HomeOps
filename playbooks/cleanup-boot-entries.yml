@@ -1,3 +1,4 @@
+---
 - name: Final Cleanup of UEFI boot entries on ws-01-linux
   hosts: ws-01-linux
   become: true
@@ -7,8 +8,9 @@
         cmd: efibootmgr -b 000B -B
       register: delete_result
       changed_when: "'Boot000B has been deleted' in delete_result.stdout"
-      failed_when: false # Ignore errors, as the entry might not exist
+      failed_when: false  # Ignore errors, as the entry might not exist
 
     - name: Set the final, correct boot order (Windows first, then Ubuntu)
       ansible.builtin.command:
         cmd: "efibootmgr -o 0000,0007"
+      changed_when: false

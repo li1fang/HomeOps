@@ -1,3 +1,5 @@
+---
+
 all:
   children:
     controllers:
@@ -32,7 +34,7 @@ all:
           ansible_port: 22
           ansible_become: true
           ansible_become_method: sudo
-          
+
     macos:
       hosts:
         ws-03-macos:

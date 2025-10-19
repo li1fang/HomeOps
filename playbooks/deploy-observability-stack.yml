@@ -1,3 +1,4 @@
+---
 - name: Deploy observability services on controller
   hosts: controllers
   become: true

@@ -1,3 +1,4 @@
+---
 - name: Install Boot-Repair on ws-01-linux
   hosts: ws-01-linux
   become: true

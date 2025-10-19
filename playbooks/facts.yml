@@ -1,3 +1,4 @@
+---
 - name: Gather facts from Linux
   hosts: linux
   gather_facts: true

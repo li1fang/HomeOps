@@ -1,3 +1,4 @@
+---
 name: Windows Is Here (Health Check)
 
 on:
@@ -14,7 +15,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-      
+
       - name: 3. Install Ansible Windows dependencies
         run: ansible-galaxy collection install -r requirements.yml
 

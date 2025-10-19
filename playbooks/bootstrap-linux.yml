@@ -1,3 +1,4 @@
+---
 - name: Bootstrap Linux nodes (ssh, tailscale, to-windows)
   hosts: whipz
   become: true

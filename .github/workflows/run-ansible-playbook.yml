@@ -1,3 +1,4 @@
+---
 name: Run Ansible Playbook Manually
 
 on:
@@ -25,7 +26,7 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-      
+
       - name: 3. Run the selected playbook
         env:
           PLAYBOOK_NAME: ${{ inputs.playbook }}

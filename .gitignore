@@ -1,0 +1,6 @@
+# Tooling artifacts
+.venv/
+artifacts/
+collections/
+__pycache__/
+*.pyc

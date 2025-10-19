@@ -1,3 +1,5 @@
+---
+
 win_ssh_service: sshd
 ubuntu_description: "Ubuntu"
 # GUID of the Ubuntu boot entry used for one-time boot from Windows.

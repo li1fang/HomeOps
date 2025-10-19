@@ -1,3 +1,4 @@
+---
 name: Full Windows Test and Switch to Linux
 
 on:
@@ -14,17 +15,17 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-      
+
       - name: 3. Install Ansible dependencies
         run: ansible-galaxy collection install -r requirements.yml
 
       - name: 4. Bootstrap Windows Systems
         run: ansible-playbook -i inventory/hosts.yaml playbooks/bootstrap-windows.yml
-        continue-on-error: true # 允许 ws-01-win 或 ws-02-win 可能不在线
+        continue-on-error: true  # 允许 ws-01-win 或 ws-02-win 可能不在线
 
       - name: 5. Health Check Windows Systems
         run: ansible -i inventory/hosts.yaml windows -m ansible.windows.win_command -a hostname
-        continue-on-error: true # 同样，允许有机器不在线
+        continue-on-error: true  # 同样，允许有机器不在线
 
       - name: 6. Switch ws-01-win back to Linux
         run: ansible-playbook -i inventory/hosts.yaml playbooks/switch-to-linux.yml

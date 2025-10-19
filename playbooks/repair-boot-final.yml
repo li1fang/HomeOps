@@ -15,7 +15,7 @@
 
   vars:
     linux_ops_dir: "/home/{{ ansible_user }}/ops"
-    make_script:   "{{ linux_ops_dir }}/make-ubuntu-direct.sh"
+    make_script: "{{ linux_ops_dir }}/make-ubuntu-direct.sh"
 
   pre_tasks:
     - name: Ensure 'efibootmgr' is present
@@ -63,13 +63,19 @@
 
     - name: Run make-ubuntu-direct.sh
       become: true
-      ansible.builtin.shell: "bash {{ make_script }}"
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ make_script }}"
       register: make_direct
       changed_when: "'UbuntuDirect' in make_direct.stdout or 'UbuntuDirect' in make_direct.stderr"
 
     - name: Assert UbuntuDirect present
       become: true
-      ansible.builtin.shell: "efibootmgr -v"
+      ansible.builtin.command:
+        argv:
+          - efibootmgr
+          - -v
       register: efiv
       changed_when: false
 
@@ -78,8 +84,7 @@
         that: "'UbuntuDirect' in efiv.stdout"
         fail_msg: "UbuntuDirect entry not found in firmware. Please check /boot/efi and efibootmgr output."
         success_msg: "UbuntuDirect entry confirmed."
-      ignore_errors: true
-      when: efiv is not skipped and efiv.stdout is defined # <--- 增加的智能判断
+      when: efiv is not skipped and efiv.stdout is defined  # <--- 增加的智能判断
 
 
 #######################################################################
@@ -92,7 +97,8 @@
 
   vars:
     win_ops_dir: 'C:\ops'
-    win_script:  '{{ win_ops_dir }}\to-linux.ps1'
+    win_script: '{{ win_ops_dir }}\to-linux.ps1'
+    templates_root: "{{ lookup('env', 'PWD') }}/templates"
 
   tasks:
     - name: Ensure C:\ops exists
@@ -102,8 +108,9 @@
 
     - name: Deploy updated to-linux.ps1 from template
       ansible.builtin.template:
-        src: "../templates/to-linux.ps1.j2"   # ★ 修正：从 playbooks/ 相对到仓库根 templates/
+        src: "{{ templates_root }}/to-linux.ps1.j2"
         dest: "{{ win_script }}"
+        mode: '0644'
 
     - name: Disable Fast Startup via registry (HiberbootEnabled=0)
       ansible.windows.win_regedit:

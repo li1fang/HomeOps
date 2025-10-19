@@ -3,5 +3,5 @@
   hosts: all
   gather_facts: false
   tasks:
-    - name: ping
+    - name: Ping
       ansible.builtin.ping:

@@ -1,10 +1,11 @@
+---
 - name: Lock kernel version on Linux Controller
-  hosts: controllers # <-- 确保这里是 controllers
+  hosts: controllers  # Ensure controller group is targeted
   become: true
   gather_facts: true
 
   tasks:
-    # ... (所有 tasks 内容和上面那个文件完全一样) ...
+    # Tasks adapted from lock-kernel.yml but targeting controllers
     - name: Hold current kernel packages
       ansible.builtin.shell: |
         set -e
@@ -21,6 +22,7 @@
 
     - name: List held kernel packages
       ansible.builtin.shell: |
+        set -o pipefail
         apt-mark showhold | grep "linux-.*{{ ansible_kernel }}" || true
       args:
         executable: /bin/bash
