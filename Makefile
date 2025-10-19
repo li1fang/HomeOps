@@ -1,42 +1,45 @@
-# Makefile — HomeOps Golden Path (hotfix: default stdout callback)
+# Makefile — PEP668-safe: setup does NOT install system packages
 INVENTORY := inventory/hosts.yaml
 ART_TEST := artifacts/test
 ART_ITEST := artifacts/itest
 
-# Force default callback to avoid missing community.general.yaml on fresh machines
-export ANSIBLE_STDOUT_CALLBACK=default
+export ANSIBLE_STDOUT_CALLBACK=ansible.builtin.yaml
 export ANSIBLE_DISPLAY_SKIPPED_HOSTS=false
 
 .PHONY: setup lint test itest deploy
 
 setup:
-	@echo "--- Local setup (optional) ---"
-	@python3 -m pip install --upgrade pip >/dev/null 2>&1 || true
-	@python3 -m pip install ansible ansible-lint yamllint >/dev/null 2>&1 || true
+	@echo "--- Gate0: record venv tool versions (no system installs) ---"
 	@mkdir -p $(ART_TEST)
-	@echo "tools: $$(ansible --version | head -n1 2>/dev/null || echo 'ansible not found')" > $(ART_TEST)/tools_versions.txt || true
-	@echo "ansible-lint: $$(ansible-lint --version 2>/dev/null || echo 'not found')" >> $(ART_TEST)/tools_versions.txt || true
-	@echo "yamllint: $$(yamllint --version 2>/dev/null || echo 'not found')" >> $(ART_TEST)/tools_versions.txt || true
+	@if [ -x ".venv/bin/ansible" ]; then \
+		. .venv/bin/activate; \
+		{ \
+		  echo "ansible      : $$(ansible --version | head -n1)"; \
+		  echo "ansible-lint : $$(ansible-lint --version | head -n1)"; \
+		  echo "yamllint     : $$(yamllint --version)"; \
+		} > $(ART_TEST)/tools_versions.txt; \
+	else \
+		echo "venv not present; this is expected on first run. Gate1 will create it in the workflow." > $(ART_TEST)/tools_versions.txt; \
+	fi
 
 lint:
-	@echo "--- Gate 1 / Step 1: Static Analysis ---"
-	@ansible-lint || exit $$?
-	@yamllint . || exit $$?
+	@echo "--- Gate1/Step1: Static Analysis ---"
+	@. .venv/bin/activate; ansible-lint || exit $$?
+	@. .venv/bin/activate; yamllint . || exit $$?
 	@echo "Syntax-check all playbooks..."
 	@set -e; for f in $(shell find playbooks -type f -name "*.yml" 2>/dev/null); do \
-		ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) --syntax-check $$f; \
+		. .venv/bin/activate; ansible-playbook -i $(INVENTORY) --syntax-check $$f; \
 	done
 
 test:
-	@echo "--- Gate 1 / Step 2: Safe local checks (no remote state change) ---"
-	@mkdir -p $(ART_TEST)
-	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/ping.yml --check --diff
+	@echo "--- Gate1/Step2: Safe local checks ---"
+	@. .venv/bin/activate; ansible-playbook -i $(INVENTORY) playbooks/ping.yml --check --diff
 
 itest:
-	@echo "--- Gate 2: Integration tests on self-hosted runner ---"
+	@echo "--- Gate2: Integration tests on self-hosted runner ---"
 	@mkdir -p $(ART_ITEST)
-	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
+	@. .venv/bin/activate; ansible-playbook -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
 
 deploy:
-	@echo "--- Deploy (conditional; only enabled via CI conditions) ---"
-	@ANSIBLE_STDOUT_CALLBACK=default ansible-playbook -i $(INVENTORY) playbooks/deploy-observability-stack.yml
+	@echo "--- Deploy (conditional) ---"
+	@. .venv/bin/activate; ansible-playbook -i $(INVENTORY) playbooks/deploy-observability-stack.yml
