@@ -1,0 +1,28 @@
+name: Run Sealos + LangGraph
+
+on:
+  workflow_dispatch:     # 手动触发
+
+jobs:
+  deploy:
+    name: Run on local runner
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Ansible if missing
+        run: |
+          if ! command -v ansible-playbook >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y ansible
+          fi
+
+      - name: Step 1 — Provision Sealos K8s
+        run: ansible-playbook playbooks/k8s/provision-sealos.yml -l controllers
+
+      - name: Step 2 — Deploy LangGraph
+        run: ansible-playbook playbooks/k8s/deploy-langgraph.yml -l controllers
+
+      - name: Step 3 — Verify Health
+        run: curl -fsSL http://127.0.0.1:30080/health || true
