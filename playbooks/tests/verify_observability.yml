@@ -46,7 +46,11 @@
         that:
           - "item.unit in ansible_facts.services"
           - "ansible_facts.services[item.unit].state == 'running'"
-          - "(ansible_facts.services[item.unit].status is defined and ansible_facts.services[item.unit].status == 'enabled') or (ansible_facts.services[item.unit].enabled is defined and ansible_facts.services[item.unit].enabled)"
+          - >-
+            (ansible_facts.services[item.unit].status is defined
+             and ansible_facts.services[item.unit].status == 'enabled')
+            or (ansible_facts.services[item.unit].enabled is defined
+                and ansible_facts.services[item.unit].enabled)
         fail_msg: "Service {{ item.friendly }} must be running and enabled on controller {{ inventory_hostname }}"
         success_msg: "Service {{ item.friendly }} running and enabled on controller {{ inventory_hostname }}"
       loop: "{{ required_services }}"
@@ -55,7 +59,8 @@
 
     - name: Probe Loki readiness endpoint
       block:
-        - ansible.builtin.uri:
+        - name: Request Loki readiness status
+          ansible.builtin.uri:
             url: "{{ loki_ready_endpoint }}"
             method: GET
             return_content: true
@@ -83,7 +88,8 @@
 
     - name: Probe Grafana health endpoint
       block:
-        - ansible.builtin.uri:
+        - name: Request Grafana health status
+          ansible.builtin.uri:
             url: "{{ grafana_health_endpoint }}"
             method: GET
             return_content: true
@@ -111,14 +117,13 @@
 
     - name: Query Loki for systemd journal logs
       block:
-        - ansible.builtin.uri:
-            url: "http://127.0.0.1:3100/loki/api/v1/query"
+        - name: Request Loki log query results
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:3100/loki/api/v1/query?query={{ loki_query_string | urlencode }}"
             method: GET
             return_content: true
             status_code: 200
             timeout: 15
-            params:
-              query: "{{ loki_query_string }}"
           register: loki_query
 
         - name: Write Loki query response
@@ -149,13 +154,18 @@
 
     - name: Capture latest Loki entry per host
       vars:
-        host_label: "{{ (item.stream.host | default(item.stream.instance | default(item.stream.hostname | default('')))).split(':')[0] }}"
+        host_label: >-
+          {{ (item.stream.host
+              | default(item.stream.instance
+              | default(item.stream.hostname | default('')))).split(':')[0] }}
         latest_entry: "{{ item.values | default([]) | last | default(['0', '']) }}"
       ansible.builtin.set_fact:
-        loki_log_map: "{{ (loki_log_map | default({})) | combine({ host_label: {
-          'timestamp_ns': latest_entry[0] | int,
-          'line': latest_entry[1] | default('')
-        } }) }}"
+        loki_log_map: >-
+          {{ (loki_log_map | default({}))
+             | combine({host_label: {
+                 'timestamp_ns': latest_entry[0] | int,
+                 'line': latest_entry[1] | default('')
+               }}) }}
       loop: "{{ loki_query.json.data.result | default([]) }}"
       when:
         - host_label | length > 0
@@ -181,7 +191,10 @@
     - name: Assert Loki log freshness per host
       ansible.builtin.assert:
         that:
-          - "((ansible_date_time.epoch | int) * 1000000000 - (loki_log_map[item].timestamp_ns | default(0))) <= (freshness_limit_seconds * 1000000000)"
+          - >-
+            ((ansible_date_time.epoch | int) * 1000000000
+             - (loki_log_map[item].timestamp_ns | default(0)))
+            <= (freshness_limit_seconds * 1000000000)
         fail_msg: "Newest Loki journal entry for host {{ item }} is older than {{ freshness_limit_seconds }} seconds"
         success_msg: "Newest Loki journal entry for host {{ item }} is within {{ freshness_limit_seconds }} seconds"
       loop: "{{ required_log_hosts }}"
@@ -209,6 +222,10 @@
         that:
           - "'alloy.service' in ansible_facts.services"
           - "ansible_facts.services['alloy.service'].state == 'running'"
-          - "(ansible_facts.services['alloy.service'].status is defined and ansible_facts.services['alloy.service'].status == 'enabled') or (ansible_facts.services['alloy.service'].enabled is defined and ansible_facts.services['alloy.service'].enabled)"
+          - >-
+            (ansible_facts.services['alloy.service'].status is defined
+             and ansible_facts.services['alloy.service'].status == 'enabled')
+            or (ansible_facts.services['alloy.service'].enabled is defined
+                and ansible_facts.services['alloy.service'].enabled)
         fail_msg: "Alloy service must be running and enabled on {{ inventory_hostname }}"
         success_msg: "Alloy service running and enabled on {{ inventory_hostname }}"
