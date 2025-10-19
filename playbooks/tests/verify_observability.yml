@@ -1,10 +1,9 @@
 ---
-- name: Verify Observability Stack (placeholder)
+- name: Prepare Gate 2 artifact directory
   hosts: localhost
-  connection: local
   gather_facts: false
   vars:
-    artifacts_dir: artifacts/itest
+    artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
   tasks:
     - name: Ensure artifacts directory exists
       ansible.builtin.file:
@@ -12,6 +11,204 @@
         state: directory
         mode: "0755"
 
-    - name: Placeholder verification
-      ansible.builtin.debug:
-        msg: "verify_observability: placeholder PASS (replace with real checks per docs/verification-spec.md)"
+- name: Verify controller observability stack
+  hosts: controllers
+  gather_facts: true
+  vars:
+    artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+    required_services:
+      - unit: loki.service
+        friendly: loki
+      - unit: grafana-server.service
+        friendly: grafana-server
+      - unit: alloy.service
+        friendly: alloy
+    loki_ready_endpoint: "http://127.0.0.1:3100/ready"
+    grafana_health_endpoint: "http://127.0.0.1:3000/api/health"
+    loki_query_string: '{job="systemd-journal"}'
+    required_log_hosts:
+      - ctrl-linux-01
+      - ws-01-linux
+    freshness_limit_seconds: 600
+  tasks:
+    - name: Collect controller service facts
+      ansible.builtin.service_facts:
+
+    - name: Write controller service facts to artifacts
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_service_facts.json"
+        content: "{{ ansible_facts.services | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Assert required services are running and enabled
+      ansible.builtin.assert:
+        that:
+          - "item.unit in ansible_facts.services"
+          - "ansible_facts.services[item.unit].state == 'running'"
+          - "(ansible_facts.services[item.unit].status is defined and ansible_facts.services[item.unit].status == 'enabled') or (ansible_facts.services[item.unit].enabled is defined and ansible_facts.services[item.unit].enabled)"
+        fail_msg: "Service {{ item.friendly }} must be running and enabled on controller {{ inventory_hostname }}"
+        success_msg: "Service {{ item.friendly }} running and enabled on controller {{ inventory_hostname }}"
+      loop: "{{ required_services }}"
+      loop_control:
+        label: "{{ item.unit }}"
+
+    - name: Probe Loki readiness endpoint
+      block:
+        - ansible.builtin.uri:
+            url: "{{ loki_ready_endpoint }}"
+            method: GET
+            return_content: true
+            status_code: 200
+            timeout: 10
+          register: loki_ready
+
+        - name: Write Loki readiness response
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/loki_ready_response.json"
+            content: "{{ loki_ready | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+      rescue:
+        - name: Persist Loki readiness failure details
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/loki_ready_response.json"
+            content: "{{ ansible_failed_result | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Fail when Loki readiness probe fails
+          ansible.builtin.fail:
+            msg: "Loki readiness endpoint check failed; see artifacts/loki_ready_response.json for details."
+
+    - name: Probe Grafana health endpoint
+      block:
+        - ansible.builtin.uri:
+            url: "{{ grafana_health_endpoint }}"
+            method: GET
+            return_content: true
+            status_code: [200, 401]
+            timeout: 10
+          register: grafana_health
+
+        - name: Write Grafana health response
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/grafana_health_response.json"
+            content: "{{ grafana_health | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+      rescue:
+        - name: Persist Grafana health failure details
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/grafana_health_response.json"
+            content: "{{ ansible_failed_result | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Fail when Grafana health probe fails
+          ansible.builtin.fail:
+            msg: "Grafana health endpoint check failed; see artifacts/grafana_health_response.json for details."
+
+    - name: Query Loki for systemd journal logs
+      block:
+        - ansible.builtin.uri:
+            url: "http://127.0.0.1:3100/loki/api/v1/query"
+            method: GET
+            return_content: true
+            status_code: 200
+            timeout: 15
+            params:
+              query: "{{ loki_query_string }}"
+          register: loki_query
+
+        - name: Write Loki query response
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/loki_query_response.json"
+            content: "{{ loki_query | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+      rescue:
+        - name: Persist Loki query failure details
+          ansible.builtin.copy:
+            dest: "{{ artifacts_dir }}/loki_query_response.json"
+            content: "{{ ansible_failed_result | to_nice_json }}"
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Fail when Loki query fails
+          ansible.builtin.fail:
+            msg: "Loki log query failed; see artifacts/loki_query_response.json for details."
+
+    - name: Ensure Loki query returned results
+      ansible.builtin.assert:
+        that:
+          - "loki_query.json is defined"
+          - "loki_query.json.data is defined"
+          - "loki_query.json.data.result is defined"
+        fail_msg: "Loki query response missing expected data structure"
+
+    - name: Capture latest Loki entry per host
+      vars:
+        host_label: "{{ (item.stream.host | default(item.stream.instance | default(item.stream.hostname | default('')))).split(':')[0] }}"
+        latest_entry: "{{ item.values | default([]) | last | default(['0', '']) }}"
+      ansible.builtin.set_fact:
+        loki_log_map: "{{ (loki_log_map | default({})) | combine({ host_label: {
+          'timestamp_ns': latest_entry[0] | int,
+          'line': latest_entry[1] | default('')
+        } }) }}"
+      loop: "{{ loki_query.json.data.result | default([]) }}"
+      when:
+        - host_label | length > 0
+        - (item.values | default([])) | length > 0
+
+    - name: Write Loki host summary to artifacts
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/loki_host_summary.json"
+        content: "{{ loki_log_map | default({}) | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Assert Loki has logs for required hosts
+      ansible.builtin.assert:
+        that:
+          - "item in loki_log_map"
+        fail_msg: "Loki query did not return systemd journal logs for host {{ item }}"
+        success_msg: "Loki returned systemd journal logs for host {{ item }}"
+      loop: "{{ required_log_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert Loki log freshness per host
+      ansible.builtin.assert:
+        that:
+          - "((ansible_date_time.epoch | int) * 1000000000 - (loki_log_map[item].timestamp_ns | default(0))) <= (freshness_limit_seconds * 1000000000)"
+        fail_msg: "Newest Loki journal entry for host {{ item }} is older than {{ freshness_limit_seconds }} seconds"
+        success_msg: "Newest Loki journal entry for host {{ item }} is within {{ freshness_limit_seconds }} seconds"
+      loop: "{{ required_log_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+
+- name: Verify Alloy service on Linux fleet
+  hosts: linux
+  gather_facts: true
+  vars:
+    artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Collect Linux service facts
+      ansible.builtin.service_facts:
+
+    - name: Write Linux host service facts to artifacts
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_service_facts.json"
+        content: "{{ ansible_facts.services | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Assert Alloy service running and enabled on Linux host
+      ansible.builtin.assert:
+        that:
+          - "'alloy.service' in ansible_facts.services"
+          - "ansible_facts.services['alloy.service'].state == 'running'"
+          - "(ansible_facts.services['alloy.service'].status is defined and ansible_facts.services['alloy.service'].status == 'enabled') or (ansible_facts.services['alloy.service'].enabled is defined and ansible_facts.services['alloy.service'].enabled)"
+        fail_msg: "Alloy service must be running and enabled on {{ inventory_hostname }}"
+        success_msg: "Alloy service running and enabled on {{ inventory_hostname }}"
