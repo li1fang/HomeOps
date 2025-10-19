@@ -1,4 +1,4 @@
-name: HomeOps Quality Gates (PEP668-safe)
+name: HomeOps Quality Gates (Option A: venv outside repo)
 
 on:
   push:
@@ -9,27 +9,27 @@ on:
 
 jobs:
   gate1-cloud:
-    name: Gate1 (cloud) — lint & test with venv
+    name: Gate1 (cloud) — lint & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Bootstrap Python venv (PEP668-safe)
+      - name: Bootstrap venv in runner temp (PEP668-safe)
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -y
           sudo apt-get install -y python3 python3-venv python3-pip
-          python3 -m venv .venv
-          . .venv/bin/activate
+          VENV="${{ runner.temp }}/venv_homeops"
+          python3 -m venv "$VENV"
+          . "$VENV/bin/activate"
           python -m pip install -U pip wheel
           python -m pip install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32"
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Show tool versions
         shell: bash
         run: |
-          . .venv/bin/activate
           ansible --version | head -n1 || true
           ansible-lint --version || true
           yamllint --version || true
@@ -46,14 +46,13 @@ jobs:
 
   gate2-selfhosted:
     name: Gate2 (self-hosted) — itest + conditional deploy
-    # Only run on push to main, not on PR (avoids fork approvals)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: gate1-cloud
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ensure venv on self-hosted
+      - name: Ensure venv in runner temp
         shell: bash
         run: |
           set -euo pipefail
@@ -61,11 +60,12 @@ jobs:
             echo "python3 missing on runner" >&2
             exit 2
           fi
-          python3 -m venv .venv || true
-          . .venv/bin/activate || true
+          VENV="${{ runner.temp }}/venv_homeops"
+          python3 -m venv "$VENV" || true
+          . "$VENV/bin/activate" || true
           python -m pip install -U pip wheel || true
           python -m pip install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32" || true
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
 
       - name: Gate2 — make itest
         env:
