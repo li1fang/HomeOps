@@ -70,14 +70,14 @@
 
         - name: Write Loki readiness response
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/loki_ready_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_ready_response.json"
             content: "{{ loki_ready | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
       rescue:
         - name: Persist Loki readiness failure details
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/loki_ready_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_ready_response.json"
             content: "{{ ansible_failed_result | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
@@ -99,14 +99,14 @@
 
         - name: Write Grafana health response
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/grafana_health_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_grafana_health_response.json"
             content: "{{ grafana_health | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
       rescue:
         - name: Persist Grafana health failure details
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/grafana_health_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_grafana_health_response.json"
             content: "{{ ansible_failed_result | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
@@ -128,14 +128,14 @@
 
         - name: Write Loki query response
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/loki_query_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_query_response.json"
             content: "{{ loki_query | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
       rescue:
         - name: Persist Loki query failure details
           ansible.builtin.copy:
-            dest: "{{ artifacts_dir }}/loki_query_response.json"
+            dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_query_response.json"
             content: "{{ ansible_failed_result | to_nice_json }}"
             mode: "0644"
           delegate_to: localhost
@@ -173,7 +173,7 @@
 
     - name: Write Loki host summary to artifacts
       ansible.builtin.copy:
-        dest: "{{ artifacts_dir }}/loki_host_summary.json"
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_host_summary.json"
         content: "{{ loki_log_map | default({}) | to_nice_json }}"
         mode: "0644"
       delegate_to: localhost
