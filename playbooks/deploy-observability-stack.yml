@@ -2,8 +2,28 @@
 - name: Deploy observability services on controller
   hosts: controllers
   become: true
+  gather_facts: true
   vars:
     templates_dir: "{{ playbook_dir }}/../templates"
+    loki_config_path: /etc/loki/config.yaml
+    loki_data_dir: /var/lib/loki
+    loki_data_subdirs:
+      - "{{ loki_data_dir }}"
+      - "{{ loki_data_dir }}/wal"
+      - "{{ loki_data_dir }}/index"
+      - "{{ loki_data_dir }}/cache"
+      - "{{ loki_data_dir }}/chunks"
+      - "{{ loki_data_dir }}/compactor"
+    loki_service_user: loki
+    loki_service_group: loki
+    loki_http_scheme: http
+    loki_http_listen_address: "{{ loki_listen_address | default('0.0.0.0') }}"
+    loki_http_port: "{{ (loki_port | default(3100)) | int }}"
+    loki_grpc_port: 9096
+    loki_advertise_host: >-
+      {{ loki_advertise_address | default(
+           ansible_host | default(
+             ansible_default_ipv4.address | default(inventory_hostname))) }}
   pre_tasks:
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
@@ -52,11 +72,35 @@
         state: present
         update_cache: true
 
+    - name: Ensure Loki data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ loki_service_user }}"
+        group: "{{ loki_service_group }}"
+        mode: "0750"
+      loop: "{{ loki_data_subdirs }}"
+
+    - name: Deploy Loki configuration
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/loki-config.yaml.j2"
+        dest: "{{ loki_config_path }}"
+        owner: "{{ loki_service_user }}"
+        group: "{{ loki_service_group }}"
+        mode: "0640"
+      notify: Restart Loki
+
     - name: Ensure Loki service is enabled and started
       ansible.builtin.systemd:
         name: loki
         state: started
         enabled: true
+
+    - name: Record Loki connection facts for other hosts
+      ansible.builtin.set_fact:
+        loki_advertise_host: "{{ loki_advertise_host }}"
+        loki_http_port: "{{ loki_http_port | int }}"
+        loki_http_scheme: "{{ loki_http_scheme }}"
 
     - name: Create Grafana datasource directory
       ansible.builtin.file:
@@ -78,6 +122,11 @@
         enabled: true
 
   handlers:
+    - name: Restart Loki
+      ansible.builtin.systemd:
+        name: loki
+        state: restarted
+
     - name: Restart Grafana
       ansible.builtin.systemd:
         name: grafana-server
@@ -87,7 +136,14 @@
   hosts: linux,controllers
   become: true
   vars:
-    loki_host: "{{ hostvars['ctrl-linux-01'].ansible_host | default('ctrl-linux-01') }}"
+    controller_host: "{{ groups['controllers'][0] }}"
+    controller_vars: "{{ hostvars[controller_host] }}"
+    loki_push_scheme: "{{ controller_vars.loki_http_scheme | default('http') }}"
+    loki_push_host: >-
+      {{ 'localhost' if inventory_hostname == controller_host else
+         controller_vars.loki_advertise_host | default(
+           controller_vars.ansible_host | default(controller_host)) }}
+    loki_push_port: "{{ controller_vars.loki_http_port | default(3100) | int }}"
     templates_dir: "{{ playbook_dir }}/../templates"
   pre_tasks:
     - name: Recover from interrupted dpkg state
