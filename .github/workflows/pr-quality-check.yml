@@ -73,6 +73,11 @@ jobs:
           python -m pip install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32" || true
           echo "$VENV/bin" >> "$GITHUB_PATH"
 
+      - name: Gate2 — make deploy (prepare stack)
+        env:
+          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
+        run: make deploy
+
       - name: Gate2 — make itest
         env:
           ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
@@ -86,7 +91,7 @@ jobs:
           path: artifacts/itest
           if-no-files-found: ignore
 
-      - name: Deploy (only when explicitly enabled)
+      - name: Redeploy (only when explicitly enabled)
         if: ${{ success() && vars.AUTO_DEPLOY == 'true' }}
         env:
           ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
