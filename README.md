@@ -188,8 +188,8 @@ sequenceDiagram
 
 ## 🗺️ 路线图（Roadmap）
 
-- [ ] **#26** 文档与金路径对齐（AGENTS.md ↔ verification-spec.md）  
-- [ ] **#27** 机判验收闭环：`verify_observability.yml` 全绿  
+- [X] **#26** 文档与金路径对齐（AGENTS.md ↔ verification-spec.md）  
+- [X] **#27** 机判验收闭环：`verify_observability.yml` 全绿  
 - [ ] **#28** 部署闭环：`deploy-observability-stack.yml` + 轻量回归  
 - [ ] 扩展：接入更多服务与主机群、AgentOps 策略、经验工件沉淀
 
