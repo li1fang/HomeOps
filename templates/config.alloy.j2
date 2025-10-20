@@ -6,6 +6,6 @@ loki.source.journal "system" {
 
 loki.write "default" {
   endpoint {
-    url = "http://{{ 'localhost' if inventory_hostname == 'ctrl-linux-01' else loki_host }}:3100/loki/api/v1/push"
+    url = "{{ loki_push_scheme }}://{{ loki_push_host }}:{{ loki_push_port | int }}/loki/api/v1/push"
   }
 }

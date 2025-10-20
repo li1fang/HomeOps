@@ -1,0 +1,61 @@
+# templates/loki-config.yaml.j2
+# Single-node Loki configuration tailored for HomeOps
+server:
+  http_listen_address: "{{ loki_http_listen_address }}"
+  http_listen_port: {{ loki_http_port | int }}
+  grpc_listen_port: {{ loki_grpc_port | int }}
+
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+
+ingester:
+  wal:
+    enabled: true
+    dir: {{ loki_data_dir }}/wal
+  lifecycler:
+    address: "{{ loki_advertise_host }}"
+    ring:
+      kvstore:
+        store: memberlist
+      replication_factor: 1
+    final_sleep: 0s
+  chunk_encoding: snappy
+
+memberlist:
+  join_members:
+    - 127.0.0.1
+
+schema_config:
+  configs:
+    - from: 2020-10-15
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: loki_index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    shared_store: filesystem
+    active_index_directory: {{ loki_data_dir }}/index
+    cache_location: {{ loki_data_dir }}/cache
+  filesystem:
+    directory: {{ loki_data_dir }}/chunks
+
+compactor:
+  working_directory: {{ loki_data_dir }}/compactor
+  shared_store: filesystem
+
+limits_config:
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+chunk_store_config:
+  max_look_back_period: 0s
+
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 744h
