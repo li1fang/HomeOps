@@ -28,6 +28,12 @@
     dpkg_recover_delay: 10
     dpkg_lock_retry_rc: 2
     dpkg_lock_retry_pattern: '(lock|锁)'
+    apt_lock_files:
+      - /var/lib/dpkg/lock-frontend
+      - /var/lib/dpkg/lock
+      - /var/lib/apt/lists/lock
+    apt_lock_wait_timeout: 300
+    apt_lock_wait_interval: 5
     apt_environment:
       DEBIAN_FRONTEND: noninteractive
     apt_operation_retries: 5
@@ -51,6 +57,16 @@
       delay: "{{ dpkg_recover_delay | int }}"
       environment: "{{ apt_environment }}"
   tasks:
+    - name: Wait for dpkg locks before installing controller base packages
+      ansible.builtin.wait_for:
+        path: "{{ item }}"
+        state: absent
+        timeout: "{{ apt_lock_wait_timeout | int }}"
+        sleep: "{{ apt_lock_wait_interval | int }}"
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Ensure required packages are installed
       ansible.builtin.apt:
         name:
@@ -65,7 +81,12 @@
       register: controller_base_packages
       retries: "{{ apt_operation_retries | int }}"
       delay: "{{ apt_operation_delay | int }}"
-      until: controller_base_packages is succeeded
+      until: >-
+        controller_base_packages is succeeded or (
+          ((controller_base_packages.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((controller_base_packages.stdout | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((controller_base_packages.msg | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+        )
       environment: "{{ apt_environment }}"
 
     - name: Report controller base package install attempts
@@ -103,6 +124,16 @@
         state: present
         filename: grafana
 
+    - name: Wait for dpkg locks before installing controller observability packages
+      ansible.builtin.wait_for:
+        path: "{{ item }}"
+        state: absent
+        timeout: "{{ apt_lock_wait_timeout | int }}"
+        sleep: "{{ apt_lock_wait_interval | int }}"
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Install Loki and Grafana
       ansible.builtin.apt:
         name:
@@ -115,7 +146,12 @@
       register: controller_observability_packages
       retries: "{{ apt_operation_retries | int }}"
       delay: "{{ apt_operation_delay | int }}"
-      until: controller_observability_packages is succeeded
+      until: >-
+        controller_observability_packages is succeeded or (
+          ((controller_observability_packages.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((controller_observability_packages.stdout | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((controller_observability_packages.msg | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+        )
       environment: "{{ apt_environment }}"
 
     - name: Report controller observability package install attempts
@@ -201,6 +237,9 @@
     dpkg_recover_delay: 10
     dpkg_lock_retry_rc: 2
     dpkg_lock_retry_pattern: '(lock|锁)'
+    apt_lock_files: "{{ controller_vars.apt_lock_files | default(['/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock', '/var/lib/apt/lists/lock']) }}"
+    apt_lock_wait_timeout: "{{ controller_vars.apt_lock_wait_timeout | default(300) | int }}"
+    apt_lock_wait_interval: "{{ controller_vars.apt_lock_wait_interval | default(5) | int }}"
     apt_environment:
       DEBIAN_FRONTEND: noninteractive
     apt_operation_retries: "{{ controller_vars.apt_operation_retries | default(5) | int }}"
@@ -224,6 +263,16 @@
       delay: "{{ dpkg_recover_delay | int }}"
       environment: "{{ apt_environment }}"
   tasks:
+    - name: Wait for dpkg locks before installing Linux base packages
+      ansible.builtin.wait_for:
+        path: "{{ item }}"
+        state: absent
+        timeout: "{{ apt_lock_wait_timeout | int }}"
+        sleep: "{{ apt_lock_wait_interval | int }}"
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Ensure required packages are installed
       ansible.builtin.apt:
         name:
@@ -238,7 +287,12 @@
       register: linux_base_packages
       retries: "{{ apt_operation_retries | int }}"
       delay: "{{ apt_operation_delay | int }}"
-      until: linux_base_packages is succeeded
+      until: >-
+        linux_base_packages is succeeded or (
+          ((linux_base_packages.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((linux_base_packages.stdout | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((linux_base_packages.msg | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+        )
       environment: "{{ apt_environment }}"
 
     - name: Report Linux base package install attempts
@@ -276,6 +330,16 @@
         state: present
         filename: grafana
 
+    - name: Wait for dpkg locks before installing Grafana Alloy
+      ansible.builtin.wait_for:
+        path: "{{ item }}"
+        state: absent
+        timeout: "{{ apt_lock_wait_timeout | int }}"
+        sleep: "{{ apt_lock_wait_interval | int }}"
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Install Grafana Alloy
       ansible.builtin.apt:
         name: alloy
@@ -286,7 +350,12 @@
       register: alloy_install
       retries: "{{ apt_operation_retries | int }}"
       delay: "{{ apt_operation_delay | int }}"
-      until: alloy_install is succeeded
+      until: >-
+        alloy_install is succeeded or (
+          ((alloy_install.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((alloy_install.stdout | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((alloy_install.msg | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+        )
       environment: "{{ apt_environment }}"
 
     - name: Report Alloy package install attempts
