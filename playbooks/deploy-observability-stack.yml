@@ -24,6 +24,23 @@
       {{ loki_advertise_address | default(
            ansible_host | default(
              ansible_default_ipv4.address | default(inventory_hostname))) }}
+    apt_periodic_disable_conf: /etc/apt/apt.conf.d/99homeops-disable-periodic
+    apt_lockdown_units:
+      - name: unattended-upgrades.service
+        state: stopped
+        masked: true
+      - name: apt-daily.service
+        state: stopped
+        masked: true
+      - name: apt-daily.timer
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.service
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.timer
+        state: stopped
+        masked: true
     dpkg_recover_retries: 6
     dpkg_recover_delay: 10
     dpkg_lock_retry_rc: 2
@@ -38,6 +55,35 @@
     download_delay: 15
     download_timeout: 60
   pre_tasks:
+    - name: Disable unattended-upgrades service to release dpkg lock
+      ansible.builtin.systemd:
+        name: unattended-upgrades.service
+        state: stopped
+        enabled: false
+        masked: true
+
+    - name: Mask automatic apt units that hold dpkg locks
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: "{{ item.state }}"
+        enabled: false
+        masked: "{{ item.masked | default(true) }}"
+      loop: "{{ apt_lockdown_units | rejectattr('name', 'equalto', 'unattended-upgrades.service') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Disable apt periodic jobs via apt.conf
+      ansible.builtin.copy:
+        dest: "{{ apt_periodic_disable_conf }}"
+        content: |
+          // HomeOps override: disable background apt timers to avoid dpkg locks
+          APT::Periodic::Enable "0";
+          APT::Periodic::Update-Package-Lists "0";
+          APT::Periodic::Unattended-Upgrade "0";
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
@@ -203,6 +249,23 @@
     dpkg_lock_retry_pattern: '(lock|锁)'
     apt_environment:
       DEBIAN_FRONTEND: noninteractive
+    apt_periodic_disable_conf: /etc/apt/apt.conf.d/99homeops-disable-periodic
+    apt_lockdown_units:
+      - name: unattended-upgrades.service
+        state: stopped
+        masked: true
+      - name: apt-daily.service
+        state: stopped
+        masked: true
+      - name: apt-daily.timer
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.service
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.timer
+        state: stopped
+        masked: true
     apt_operation_retries: "{{ controller_vars.apt_operation_retries | default(5) | int }}"
     apt_operation_delay: "{{ controller_vars.apt_operation_delay | default(20) | int }}"
     apt_operation_timeout: "{{ controller_vars.apt_operation_timeout | default(600) | int }}"
@@ -211,6 +274,35 @@
     download_delay: "{{ controller_vars.download_delay | default(15) | int }}"
     download_timeout: "{{ controller_vars.download_timeout | default(60) | int }}"
   pre_tasks:
+    - name: Disable unattended-upgrades service to release dpkg lock
+      ansible.builtin.systemd:
+        name: unattended-upgrades.service
+        state: stopped
+        enabled: false
+        masked: true
+
+    - name: Mask automatic apt units that hold dpkg locks
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: "{{ item.state }}"
+        enabled: false
+        masked: "{{ item.masked | default(true) }}"
+      loop: "{{ apt_lockdown_units | rejectattr('name', 'equalto', 'unattended-upgrades.service') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Disable apt periodic jobs via apt.conf
+      ansible.builtin.copy:
+        dest: "{{ apt_periodic_disable_conf }}"
+        content: |
+          // HomeOps override: disable background apt timers to avoid dpkg locks
+          APT::Periodic::Enable "0";
+          APT::Periodic::Update-Package-Lists "0";
+          APT::Periodic::Unattended-Upgrade "0";
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
