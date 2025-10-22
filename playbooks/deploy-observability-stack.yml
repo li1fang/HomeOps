@@ -61,7 +61,6 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-        timeout: "{{ apt_operation_timeout | int }}"
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: controller_base_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -112,7 +111,6 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-        timeout: "{{ apt_operation_timeout | int }}"
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: controller_observability_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -236,7 +234,6 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-        timeout: "{{ apt_operation_timeout | int }}"
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: linux_base_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -285,7 +282,6 @@
         state: present
         update_cache: true
         cache_valid_time: 3600
-        timeout: "{{ apt_operation_timeout | int }}"
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: alloy_install
       retries: "{{ apt_operation_retries | int }}"
