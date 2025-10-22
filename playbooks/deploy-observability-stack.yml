@@ -24,12 +24,22 @@
       {{ loki_advertise_address | default(
            ansible_host | default(
              ansible_default_ipv4.address | default(inventory_hostname))) }}
+    dpkg_recover_retries: 6
+    dpkg_recover_delay: 10
+    dpkg_lock_retry_rc: 2
+    dpkg_lock_retry_pattern: '(lock|锁)'
   pre_tasks:
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
       changed_when: dpkg_recover.stdout != '' or dpkg_recover.stderr != ''
-      failed_when: dpkg_recover.rc != 0
+      failed_when:
+        - dpkg_recover.rc not in [0, dpkg_lock_retry_rc]
+        - dpkg_recover.rc == dpkg_lock_retry_rc and
+          ((dpkg_recover.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+      until: dpkg_recover.rc == 0
+      retries: "{{ dpkg_recover_retries | int }}"
+      delay: "{{ dpkg_recover_delay | int }}"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
@@ -145,12 +155,22 @@
            controller_vars.ansible_host | default(controller_host)) }}
     loki_push_port: "{{ controller_vars.loki_http_port | default(3100) | int }}"
     templates_dir: "{{ playbook_dir }}/../templates"
+    dpkg_recover_retries: 6
+    dpkg_recover_delay: 10
+    dpkg_lock_retry_rc: 2
+    dpkg_lock_retry_pattern: '(lock|锁)'
   pre_tasks:
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
       changed_when: dpkg_recover.stdout != '' or dpkg_recover.stderr != ''
-      failed_when: dpkg_recover.rc != 0
+      failed_when:
+        - dpkg_recover.rc not in [0, dpkg_lock_retry_rc]
+        - dpkg_recover.rc == dpkg_lock_retry_rc and
+          ((dpkg_recover.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+      until: dpkg_recover.rc == 0
+      retries: "{{ dpkg_recover_retries | int }}"
+      delay: "{{ dpkg_recover_delay | int }}"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
