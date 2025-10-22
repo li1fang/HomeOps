@@ -50,7 +50,7 @@ make test # Gate1.2: local non-destructive checks (check mode / idempotency prob
 
 make itest # Gate2: self-hosted integration acceptance (machine-verifiable)
 
-make deploy # 条件部署：仅在 make itest 通过后允许运行
+make deploy # 条件部署：在 Gate 2 中于 make itest 之前执行，或在 Gate 2 通过后手动/按工作流触发
 
 对各命令的职责简述
 
@@ -60,7 +60,7 @@ make lint：静态风格、语法检查，必须限制在仓库源（playbooks/,
 
 make test：在 --check 或等价安全模式下运行关键 playbook，输出到 artifacts/test/。
 
-make itest：在自托管 Runner（带硬件访问）上执行 playbooks/tests/verify_observability.yml，并把验证结果与原始证据写入 artifacts/itest/。判分依据为 docs/verification-spec.md。
+make itest：在 Gate 2 中，于 make deploy 成功执行之后，在自托管 Runner（带硬件访问）上执行 playbooks/tests/verify_observability.yml，以验证部署结果是否符合 docs/verification-spec.md 的要求，并将验证结果与原始证据写入 artifacts/itest/。
 
 make deploy：只有在 make itest 通过并满足分支/变量条件时才允许执行。
 
