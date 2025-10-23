@@ -4,6 +4,78 @@
   become: true
   vars:
     templates_root: "{{ lookup('env', 'PWD') }}/templates"
+    dpkg_recover_retries: 6
+    dpkg_recover_delay: 10
+    dpkg_lock_retry_rc: 2
+    dpkg_lock_retry_pattern: '(lock|锁)'
+    apt_environment:
+      DEBIAN_FRONTEND: noninteractive
+    apt_periodic_disable_conf: /etc/apt/apt.conf.d/99homeops-disable-periodic
+    apt_lockdown_units:
+      - name: unattended-upgrades.service
+        state: stopped
+        masked: true
+      - name: apt-daily.service
+        state: stopped
+        masked: true
+      - name: apt-daily.timer
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.service
+        state: stopped
+        masked: true
+      - name: apt-daily-upgrade.timer
+        state: stopped
+        masked: true
+    apt_operation_retries: 5
+    apt_operation_delay: 20
+    apt_operation_timeout: 600
+    apt_lock_timeout: 120
+    download_retries: 5
+    download_delay: 15
+    download_timeout: 60
+  pre_tasks:
+    - name: Disable unattended-upgrades service to release dpkg lock
+      ansible.builtin.systemd:
+        name: unattended-upgrades.service
+        state: stopped
+        enabled: false
+        masked: true
+
+    - name: Mask automatic apt units that hold dpkg locks
+      ansible.builtin.systemd:
+        name: "{{ item.name }}"
+        state: "{{ item.state }}"
+        enabled: false
+        masked: "{{ item.masked | default(true) }}"
+      loop: "{{ apt_lockdown_units | rejectattr('name', 'equalto', 'unattended-upgrades.service') | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Disable apt periodic jobs via apt.conf
+      ansible.builtin.copy:
+        dest: "{{ apt_periodic_disable_conf }}"
+        content: |
+          // HomeOps override: disable background apt timers to avoid dpkg locks
+          APT::Periodic::Enable "0";
+          APT::Periodic::Update-Package-Lists "0";
+          APT::Periodic::Unattended-Upgrade "0";
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Recover from interrupted dpkg state
+      ansible.builtin.command: dpkg --configure -a
+      register: dpkg_recover
+      changed_when: dpkg_recover.stdout != '' or dpkg_recover.stderr != ''
+      failed_when:
+        - dpkg_recover.rc not in [0, dpkg_lock_retry_rc]
+        - dpkg_recover.rc == dpkg_lock_retry_rc and
+          ((dpkg_recover.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+      until: dpkg_recover.rc == 0
+      retries: "{{ dpkg_recover_retries | int }}"
+      delay: "{{ dpkg_recover_delay | int }}"
+      environment: "{{ apt_environment }}"
   tasks:
     - name: Ensure required packages are installed
       ansible.builtin.apt:
@@ -14,6 +86,19 @@
           - gpg
         state: present
         update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: "{{ apt_lock_timeout | int }}"
+      register: alloy_base_packages
+      retries: "{{ apt_operation_retries | int }}"
+      delay: "{{ apt_operation_delay | int }}"
+      until: alloy_base_packages is succeeded
+      environment: "{{ apt_environment }}"
+
+    - name: Report Alloy base package install attempts
+      ansible.builtin.debug:
+        msg: >-
+          Alloy base packages succeeded after
+          {{ alloy_base_packages.attempts | default(1) }} attempt(s)
 
     - name: Create keyring directory
       ansible.builtin.file:
@@ -26,12 +111,18 @@
         url: https://apt.grafana.com/gpg.key
         dest: /etc/apt/keyrings/grafana.gpg.asc
         mode: '0644'
+        timeout: "{{ download_timeout | int }}"
+      register: grafana_key_download
+      retries: "{{ download_retries | int }}"
+      delay: "{{ download_delay | int }}"
+      until: grafana_key_download is succeeded
 
     - name: Convert Grafana GPG key to keyring format
       ansible.builtin.command:
         cmd: gpg --dearmor --yes --output /etc/apt/keyrings/grafana.gpg /etc/apt/keyrings/grafana.gpg.asc
       args:
         creates: /etc/apt/keyrings/grafana.gpg
+      environment: "{{ apt_environment }}"
 
     - name: Ensure Grafana keyring permissions
       ansible.builtin.file:
@@ -42,12 +133,26 @@
       ansible.builtin.apt_repository:
         repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
         state: present
+        filename: grafana
 
     - name: Install Grafana Alloy
       ansible.builtin.apt:
         name: alloy
         state: present
         update_cache: true
+        cache_valid_time: 3600
+        lock_timeout: "{{ apt_lock_timeout | int }}"
+      register: alloy_install
+      retries: "{{ apt_operation_retries | int }}"
+      delay: "{{ apt_operation_delay | int }}"
+      until: alloy_install is succeeded
+      environment: "{{ apt_environment }}"
+
+    - name: Report Alloy package install attempts
+      ansible.builtin.debug:
+        msg: >-
+          Alloy package install succeeded after
+          {{ alloy_install.attempts | default(1) }} attempt(s)
 
     - name: Create Alloy configuration directory
       ansible.builtin.file:
@@ -66,7 +171,7 @@
       ansible.builtin.systemd:
         name: alloy
         state: started
-        enabled: yes
+        enabled: true
 
   handlers:
     - name: Restart Alloy
