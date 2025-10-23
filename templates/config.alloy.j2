@@ -1,4 +1,3 @@
-# templates/config.alloy.j2
 loki.source.journal "system" {
   labels = {job = "systemd-journal"}
   forward_to = [loki.write.default.receiver]
