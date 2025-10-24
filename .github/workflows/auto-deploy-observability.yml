@@ -1,26 +1,52 @@
 ---
-name: Auto-Deploy Observability Stack
+name: "HomeOps Main Branch Pipeline"
 
 'on':
   push:
     branches:
       - main
-    paths:  # 只有当日志相关的剧本或模板文件发生变化时，才触发
-      - 'playbooks/deploy-observability-stack.yml'
-      - 'templates/config.alloy.j2'
-      - 'templates/grafana-datasource-loki.yml.j2'
+
+concurrency:
+  group: homeops-main-pipeline
+  cancel-in-progress: false
 
 jobs:
-  auto-deploy:
+  gate2-main:
+    name: Gate2 (self-hosted) — deploy & verify
     runs-on: self-hosted
     steps:
-      - name: 1. Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 2. Setup SSH Key
+      - name: Configure SSH credentials
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: 3. Run the observability stack deployment
-        run: ansible-playbook -i inventory/hosts.yaml playbooks/deploy-observability-stack.yml
+      - name: Gate0 — make setup
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+        run: make setup
+
+      - name: Show tool versions
+        run: cat artifacts/test/tools_versions.txt
+
+      - name: Gate2 — make deploy
+        env:
+          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
+        run: make deploy
+
+      - name: Gate2 — make itest
+        env:
+          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
+        run: make itest
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-pipeline-artifacts
+          path: |
+            artifacts/test
+            artifacts/itest
+          if-no-files-found: ignore

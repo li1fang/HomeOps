@@ -280,6 +280,14 @@
       delay: "{{ dpkg_recover_delay | int }}"
       environment: "{{ apt_environment }}"
   tasks:
+    - name: Remove stale lock files before installing controller base packages
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Wait for dpkg locks before installing controller base packages
       ansible.builtin.wait_for:
         path: "{{ item }}"
@@ -355,6 +363,14 @@
         repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
         state: present
         filename: grafana
+
+    - name: Remove stale lock files before installing controller observability packages
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
 
     - name: Wait for dpkg locks before installing controller observability packages
       ansible.builtin.wait_for:
@@ -706,6 +722,14 @@
       delay: "{{ dpkg_recover_delay | int }}"
       environment: "{{ apt_environment }}"
   tasks:
+    - name: Remove stale lock files before installing Linux base packages
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
+
     - name: Wait for dpkg locks before installing Linux base packages
       ansible.builtin.wait_for:
         path: "{{ item }}"
@@ -781,6 +805,14 @@
         repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main"
         state: present
         filename: grafana
+
+    - name: Remove stale lock files before installing Grafana Alloy
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ apt_lock_files }}"
+      loop_control:
+        label: "{{ item }}"
 
     - name: Wait for dpkg locks before installing Grafana Alloy
       ansible.builtin.wait_for:
