@@ -1,0 +1,25 @@
+{% set any_written = namespace(flag=False) %}
+{% for host in aggregate_hosts %}
+{% set host_section = namespace(written=False) %}
+{% for phase in dpkg_snapshot_sequence %}
+{% set var_name = phase.var %}
+{% if hostvars[host] is defined and hostvars[host][var_name] is defined %}
+{% if not host_section.written %}
+{% if any_written.flag %}
+
+{% endif %}
+### Host: {{ host }}
+{% set host_section.written = True %}
+{% set any_written.flag = True %}
+{% endif %}
+---- Phase: {{ phase.label }} ----
+{{ hostvars[host][var_name].stdout | default('') | trim }}
+{% endif %}
+{% endfor %}
+{% if host_section.written %}
+
+{% endif %}
+{% endfor %}
+{% if not any_written.flag %}
+No dpkg lock evidence collected.
+{% endif %}

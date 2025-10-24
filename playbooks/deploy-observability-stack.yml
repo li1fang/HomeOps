@@ -1,9 +1,26 @@
 ---
+- name: Prepare deploy evidence directory
+  hosts: localhost
+  gather_facts: false
+  vars:
+    deploy_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Ensure deploy artifacts directory exists
+      ansible.builtin.file:
+        path: "{{ deploy_artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Share deploy artifacts directory with other plays
+      ansible.builtin.set_fact:
+        deploy_artifacts_dir: "{{ deploy_artifacts_dir }}"
+
 - name: Deploy observability services on controller
   hosts: controllers
   become: true
   gather_facts: true
   vars:
+    deploy_artifacts_dir: "{{ hostvars['localhost'].deploy_artifacts_dir | default('artifacts/itest') }}"
     templates_dir: "{{ playbook_dir }}/../templates"
     loki_config_path: /etc/loki/config.yaml
     loki_data_dir: /var/lib/loki
@@ -57,10 +74,60 @@
     apt_operation_delay: 20
     apt_operation_timeout: 600
     apt_lock_timeout: 120
+    apt_cache_valid_time: 3600
     download_retries: 5
     download_delay: 15
     download_timeout: 60
+    apt_quiesce_units: "{{ (apt_lockdown_units | map(attribute='name') | list) | unique }}"
   pre_tasks:
+    - name: Capture apt maintenance snapshot before window
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="pre-maintenance"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_pre
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot before window
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="pre-maintenance"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_pre
+      changed_when: false
+
     - name: Disable unattended-upgrades service to release dpkg lock
       ansible.builtin.systemd:
         name: unattended-upgrades.service
@@ -90,6 +157,54 @@
         group: root
         mode: '0644'
 
+    - name: Capture apt maintenance snapshot after window enforced
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-quiesce"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_post_quiesce
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot after window enforced
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-quiesce"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_post_quiesce
+      changed_when: false
+
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
@@ -113,6 +228,17 @@
       loop_control:
         label: "{{ item }}"
 
+    - name: Refresh apt package index on controller
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time | int }}"
+        lock_timeout: "{{ apt_lock_timeout | int }}"
+      register: controller_cache_refresh
+      retries: "{{ apt_operation_retries | int }}"
+      delay: "{{ apt_operation_delay | int }}"
+      until: controller_cache_refresh is succeeded
+      environment: "{{ apt_environment }}"
+
     - name: Ensure required packages are installed
       ansible.builtin.apt:
         name:
@@ -121,8 +247,6 @@
           - wget
           - gpg
         state: present
-        update_cache: true
-        cache_valid_time: 3600
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: controller_base_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -186,8 +310,6 @@
           - loki
           - grafana
         state: present
-        update_cache: true
-        cache_valid_time: 3600
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: controller_observability_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -205,6 +327,54 @@
         msg: >-
           Controller observability packages succeeded after
           {{ controller_observability_packages.attempts | default(1) }} attempt(s)
+
+    - name: Capture apt maintenance snapshot after package stage
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-packages"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_post_packages
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot after package stage
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-packages"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_post_packages
+      changed_when: false
 
     - name: Ensure Loki data directories exist
       ansible.builtin.file:
@@ -269,7 +439,9 @@
 - name: Deploy Grafana Alloy on Linux hosts
   hosts: linux,controllers
   become: true
+  serial: 1
   vars:
+    deploy_artifacts_dir: "{{ hostvars['localhost'].deploy_artifacts_dir | default('artifacts/itest') }}"
     controller_host: "{{ groups['controllers'][0] }}"
     controller_vars: "{{ hostvars[controller_host] }}"
     loki_push_scheme: "{{ controller_vars.loki_http_scheme | default('http') }}"
@@ -309,10 +481,60 @@
     apt_operation_delay: "{{ controller_vars.apt_operation_delay | default(20) | int }}"
     apt_operation_timeout: "{{ controller_vars.apt_operation_timeout | default(600) | int }}"
     apt_lock_timeout: "{{ controller_vars.apt_lock_timeout | default(120) | int }}"
+    apt_cache_valid_time: "{{ controller_vars.apt_cache_valid_time | default(3600) | int }}"
     download_retries: "{{ controller_vars.download_retries | default(5) | int }}"
     download_delay: "{{ controller_vars.download_delay | default(15) | int }}"
     download_timeout: "{{ controller_vars.download_timeout | default(60) | int }}"
+    apt_quiesce_units: "{{ (apt_lockdown_units | map(attribute='name') | list) | unique }}"
   pre_tasks:
+    - name: Capture apt maintenance snapshot before window
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="pre-maintenance"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_pre
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot before window
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="pre-maintenance"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_pre
+      changed_when: false
+
     - name: Disable unattended-upgrades service to release dpkg lock
       ansible.builtin.systemd:
         name: unattended-upgrades.service
@@ -342,6 +564,54 @@
         group: root
         mode: '0644'
 
+    - name: Capture apt maintenance snapshot after window enforced
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-quiesce"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_post_quiesce
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot after window enforced
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-quiesce"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_post_quiesce
+      changed_when: false
+
     - name: Recover from interrupted dpkg state
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_recover
@@ -365,6 +635,17 @@
       loop_control:
         label: "{{ item }}"
 
+    - name: Refresh apt package index on Linux host
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
+        lock_timeout: "{{ apt_lock_timeout }}"
+      register: linux_cache_refresh
+      retries: "{{ apt_operation_retries }}"
+      delay: "{{ apt_operation_delay }}"
+      until: linux_cache_refresh is succeeded
+      environment: "{{ apt_environment }}"
+
     - name: Ensure required packages are installed
       ansible.builtin.apt:
         name:
@@ -373,8 +654,6 @@
           - wget
           - gpg
         state: present
-        update_cache: true
-        cache_valid_time: 3600
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: linux_base_packages
       retries: "{{ apt_operation_retries | int }}"
@@ -436,8 +715,6 @@
       ansible.builtin.apt:
         name: alloy
         state: present
-        update_cache: true
-        cache_valid_time: 3600
         lock_timeout: "{{ apt_lock_timeout | int }}"
       register: alloy_install
       retries: "{{ apt_operation_retries | int }}"
@@ -455,6 +732,54 @@
         msg: >-
           Alloy package install succeeded after
           {{ alloy_install.attempts | default(1) }} attempt(s)
+
+    - name: Capture apt maintenance snapshot after package stage
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-packages"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for unit in {{ apt_quiesce_units | join(' ') }}; do
+            echo "--- systemctl status ${unit} ---"
+            systemctl status "${unit}" --no-pager 2>&1 || true
+          done
+          echo "--- systemctl list-timers (filtered) ---"
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+        }
+      args:
+        executable: /bin/bash
+      register: apt_quiesce_snapshot_post_packages
+      changed_when: false
+
+    - name: Capture dpkg lock snapshot after package stage
+      ansible.builtin.shell: |
+        set -uo pipefail
+        phase="post-packages"
+        {
+          echo "=== host: {{ inventory_hostname }} | phase: ${phase} ==="
+          date --iso-8601=seconds
+          for lock_path in {{ apt_lock_files | map('quote') | join(' ') }}; do
+            if [ -e "${lock_path}" ]; then
+              echo "lock ${lock_path}: PRESENT"
+              ls -l "${lock_path}"
+              if command -v fuser >/dev/null 2>&1; then
+                echo "-- fuser holders --"
+                fuser -v "${lock_path}" 2>&1 || true
+              else
+                echo "fuser command unavailable"
+              fi
+            else
+              echo "lock ${lock_path}: absent"
+            fi
+          done
+          echo "--- active apt/dpkg processes ---"
+          ps -eo pid,ppid,stat,cmd | awk '/apt/ || /dpkg/' || true
+        }
+      args:
+        executable: /bin/bash
+      register: dpkg_lock_snapshot_post_packages
+      changed_when: false
 
     - name: Create Alloy configuration directory
       ansible.builtin.file:
@@ -480,3 +805,31 @@
       ansible.builtin.systemd:
         name: alloy
         state: restarted
+
+- name: Aggregate deploy evidence snapshots
+  hosts: localhost
+  gather_facts: false
+  vars:
+    deploy_artifacts_dir: "{{ hostvars['localhost'].deploy_artifacts_dir | default('artifacts/itest') }}"
+    templates_dir: "{{ playbook_dir }}/../templates"
+    aggregate_hosts: "{{ (groups['controllers'] | default([])) | union(groups['linux'] | default([])) }}"
+    apt_snapshot_sequence:
+      - {label: 'pre-maintenance', var: 'apt_quiesce_snapshot_pre'}
+      - {label: 'post-quiesce', var: 'apt_quiesce_snapshot_post_quiesce'}
+      - {label: 'post-packages', var: 'apt_quiesce_snapshot_post_packages'}
+    dpkg_snapshot_sequence:
+      - {label: 'pre-maintenance', var: 'dpkg_lock_snapshot_pre'}
+      - {label: 'post-quiesce', var: 'dpkg_lock_snapshot_post_quiesce'}
+      - {label: 'post-packages', var: 'dpkg_lock_snapshot_post_packages'}
+  tasks:
+    - name: Write apt maintenance evidence artifact
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/deploy_apt_quiesce_report.j2"
+        dest: "{{ deploy_artifacts_dir }}/apt_quiesce_status.txt"
+        mode: '0644'
+
+    - name: Write dpkg lock evidence artifact
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/deploy_dpkg_lock_report.j2"
+        dest: "{{ deploy_artifacts_dir }}/dpkg_lock_report.txt"
+        mode: '0644'
