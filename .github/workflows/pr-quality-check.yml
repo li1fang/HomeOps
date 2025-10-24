@@ -1,12 +1,9 @@
 ---
-name: "HomeOps Quality Gates (Option A: venv outside repo)"
+name: "HomeOps PR Quality Gates"
 
 'on':
-  push:
-    branches: ["main"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch: {}
 
 jobs:
   gate1-cloud:
@@ -49,50 +46,3 @@ jobs:
           name: gate1-artifacts
           path: artifacts/test
           if-no-files-found: warn
-
-  gate2-selfhosted:
-    name: Gate2 (self-hosted) — itest + conditional deploy
-    needs: gate1-cloud
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Ensure venv in runner temp
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v python3 >/dev/null 2>&1; then
-            echo "python3 missing on runner" >&2
-            exit 2
-          fi
-          VENV="${{ runner.temp }}/venv_homeops"
-          python3 -m venv "$VENV" || true
-          . "$VENV/bin/activate" || true
-          python -m pip install -U pip wheel || true
-          python -m pip install "ansible-core>=2.16" "ansible-lint>=24.0" "yamllint>=1.32" || true
-          echo "$VENV/bin" >> "$GITHUB_PATH"
-
-      - name: Gate2 — make deploy (prepare stack)
-        env:
-          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
-        run: make deploy
-
-      - name: Gate2 — make itest
-        env:
-          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
-        run: make itest
-
-      - name: Upload itest artifacts (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: itest-artifacts
-          path: artifacts/itest
-          if-no-files-found: ignore
-
-      - name: Redeploy (only when explicitly enabled)
-        if: ${{ success() && vars.AUTO_DEPLOY == 'true' }}
-        env:
-          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
-        run: make deploy
