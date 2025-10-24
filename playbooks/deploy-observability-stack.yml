@@ -163,9 +163,10 @@
         enabled: false
         masked: true
       register: unattended_disable_result
-      failed_when:
-        - unattended_disable_result is failed
-        - (unattended_disable_result.msg | default('')) is not regex_search('not found', ignorecase=True)
+      failed_when: >-
+        unattended_disable_result is failed and
+        ((unattended_disable_result.msg | default(''))
+         is not regex_search('not found', ignorecase=True))
 
     - name: Mask automatic apt units that hold dpkg locks
       ansible.builtin.systemd:
@@ -177,9 +178,10 @@
       loop_control:
         label: "{{ item.name }}"
       register: apt_lockdown_result
-      failed_when:
-        - apt_lockdown_result is failed
-        - (apt_lockdown_result.msg | default('')) is not regex_search('not found', ignorecase=True)
+      failed_when: >-
+        apt_lockdown_result is failed and
+        ((apt_lockdown_result.msg | default(''))
+         is not regex_search('not found', ignorecase=True))
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -563,9 +565,10 @@
         enabled: false
         masked: true
       register: unattended_disable_result
-      failed_when:
-        - unattended_disable_result is failed
-        - (unattended_disable_result.msg | default('')) is not regex_search('not found', ignorecase=True)
+      failed_when: >-
+        unattended_disable_result is failed and
+        ((unattended_disable_result.msg | default(''))
+         is not regex_search('not found', ignorecase=True))
 
     - name: Mask automatic apt units that hold dpkg locks
       ansible.builtin.systemd:
@@ -577,9 +580,10 @@
       loop_control:
         label: "{{ item.name }}"
       register: apt_lockdown_result
-      failed_when:
-        - apt_lockdown_result is failed
-        - (apt_lockdown_result.msg | default('')) is not regex_search('not found', ignorecase=True)
+      failed_when: >-
+        apt_lockdown_result is failed and
+        ((apt_lockdown_result.msg | default(''))
+         is not regex_search('not found', ignorecase=True))
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
