@@ -1,7 +1,7 @@
 ---
 name: Run Ansible Playbook Manually
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       playbook:
