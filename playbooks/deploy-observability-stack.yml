@@ -177,9 +177,21 @@
       loop_control:
         label: "{{ item.name }}"
       register: apt_lockdown_result
-      failed_when: >-
-        apt_lockdown_result is failed and
-        ('not found' not in ((apt_lockdown_result.msg | default('')) | lower))
+      ignore_errors: true
+
+    - name: Fail if any apt lockdown unit error is not an expected missing unit
+      ansible.builtin.fail:
+        msg: >-
+          Masking {{ item.item.name | default(item.item) }} failed with msg="{{ item.msg | default('') }}" stderr="{{ item.stderr | default('') }}"
+      loop: "{{ apt_lockdown_result.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.name | default(item.item) }}"
+      vars:
+        apt_lockdown_failure_text: "{{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default(''))) | lower }}"
+      when:
+        - item is failed
+        - "'not found' not in apt_lockdown_failure_text"
+        - "'not loaded' not in apt_lockdown_failure_text"
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -577,9 +589,21 @@
       loop_control:
         label: "{{ item.name }}"
       register: apt_lockdown_result
-      failed_when: >-
-        apt_lockdown_result is failed and
-        ('not found' not in ((apt_lockdown_result.msg | default('')) | lower))
+      ignore_errors: true
+
+    - name: Fail if any apt lockdown unit error is not an expected missing unit
+      ansible.builtin.fail:
+        msg: >-
+          Masking {{ item.item.name | default(item.item) }} failed with msg="{{ item.msg | default('') }}" stderr="{{ item.stderr | default('') }}"
+      loop: "{{ apt_lockdown_result.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.name | default(item.item) }}"
+      vars:
+        apt_lockdown_failure_text: "{{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default(''))) | lower }}"
+      when:
+        - item is failed
+        - "'not found' not in apt_lockdown_failure_text"
+        - "'not loaded' not in apt_lockdown_failure_text"
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
