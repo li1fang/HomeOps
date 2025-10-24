@@ -42,7 +42,7 @@
            ansible_host | default(
              ansible_default_ipv4.address | default(inventory_hostname))) }}
     apt_periodic_disable_conf: /etc/apt/apt.conf.d/99homeops-disable-periodic
-    apt_lockdown_units:
+    apt_lockdown_units_common: &apt_lockdown_units_common
       - name: unattended-upgrades.service
         state: stopped
         masked: true
@@ -58,6 +58,34 @@
       - name: apt-daily-upgrade.timer
         state: stopped
         masked: true
+      - name: snapd.service
+        state: stopped
+        masked: true
+      - name: snapd.socket
+        state: stopped
+        masked: true
+      - name: snapd.seeded.service
+        state: stopped
+        masked: true
+      - name: snapd.refresh.timer
+        state: stopped
+        masked: true
+      - name: snapd.snap-repair.service
+        state: stopped
+        masked: true
+      - name: snapd.snap-repair.timer
+        state: stopped
+        masked: true
+      - name: packagekit.service
+        state: stopped
+        masked: true
+      - name: packagekit-offline-update.service
+        state: stopped
+        masked: true
+      - name: packagekit-offline-update.timer
+        state: stopped
+        masked: true
+    apt_lockdown_units: *apt_lockdown_units_common
     dpkg_recover_retries: 6
     dpkg_recover_delay: 10
     dpkg_lock_retry_rc: 2
@@ -66,14 +94,14 @@
       - /var/lib/dpkg/lock-frontend
       - /var/lib/dpkg/lock
       - /var/lib/apt/lists/lock
-    apt_lock_wait_timeout: 300
+    apt_lock_wait_timeout: 600
     apt_lock_wait_interval: 5
     apt_environment:
       DEBIAN_FRONTEND: noninteractive
     apt_operation_retries: 5
     apt_operation_delay: 20
     apt_operation_timeout: 600
-    apt_lock_timeout: 120
+    apt_lock_timeout: 600
     apt_cache_valid_time: 3600
     download_retries: 5
     download_delay: 15
@@ -92,7 +120,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -134,6 +162,10 @@
         state: stopped
         enabled: false
         masked: true
+      register: unattended_disable_result
+      failed_when: >-
+        unattended_disable_result is failed and
+        ('not found' not in ((unattended_disable_result.msg | default('')) | lower))
 
     - name: Mask automatic apt units that hold dpkg locks
       ansible.builtin.systemd:
@@ -144,6 +176,36 @@
       loop: "{{ apt_lockdown_units | rejectattr('name', 'equalto', 'unattended-upgrades.service') | list }}"
       loop_control:
         label: "{{ item.name }}"
+      register: apt_lockdown_result
+      ignore_errors: true
+
+    - name: Fail if any apt lockdown unit error is not an expected missing unit
+      ansible.builtin.fail:
+        msg: >-
+          Masking {{ item.item.name | default(item.item) }} failed with msg="{{ item.msg | default('') }}" stderr="{{ item.stderr | default('') }}"
+      loop: "{{ apt_lockdown_result.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.name | default(item.item) }}"
+      vars:
+        apt_lockdown_failure_text: >-
+          {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
+        apt_lockdown_missing_phrases:
+          - not found
+          - could not find
+          - could not be found
+          - requested service
+          - could not load
+          - not loaded
+          - does not exist
+          - no such file or directory
+          - no such unit
+          - unit not found
+          - unit could not be found
+          - service does not exist
+          - unknown unit
+      when:
+        - item is failed
+        - apt_lockdown_missing_phrases | select('in', apt_lockdown_failure_text) | list | length == 0
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -169,7 +231,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -340,7 +402,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -456,31 +518,16 @@
     dpkg_lock_retry_rc: 2
     dpkg_lock_retry_pattern: '(lock|锁)'
     apt_lock_files: "{{ controller_vars.apt_lock_files | default(['/var/lib/dpkg/lock-frontend', '/var/lib/dpkg/lock', '/var/lib/apt/lists/lock']) }}"
-    apt_lock_wait_timeout: "{{ controller_vars.apt_lock_wait_timeout | default(300) | int }}"
+    apt_lock_wait_timeout: "{{ controller_vars.apt_lock_wait_timeout | default(600) | int }}"
     apt_lock_wait_interval: "{{ controller_vars.apt_lock_wait_interval | default(5) | int }}"
     apt_environment:
       DEBIAN_FRONTEND: noninteractive
     apt_periodic_disable_conf: /etc/apt/apt.conf.d/99homeops-disable-periodic
-    apt_lockdown_units:
-      - name: unattended-upgrades.service
-        state: stopped
-        masked: true
-      - name: apt-daily.service
-        state: stopped
-        masked: true
-      - name: apt-daily.timer
-        state: stopped
-        masked: true
-      - name: apt-daily-upgrade.service
-        state: stopped
-        masked: true
-      - name: apt-daily-upgrade.timer
-        state: stopped
-        masked: true
+    apt_lockdown_units: *apt_lockdown_units_common
     apt_operation_retries: "{{ controller_vars.apt_operation_retries | default(5) | int }}"
     apt_operation_delay: "{{ controller_vars.apt_operation_delay | default(20) | int }}"
     apt_operation_timeout: "{{ controller_vars.apt_operation_timeout | default(600) | int }}"
-    apt_lock_timeout: "{{ controller_vars.apt_lock_timeout | default(120) | int }}"
+    apt_lock_timeout: "{{ controller_vars.apt_lock_timeout | default(600) | int }}"
     apt_cache_valid_time: "{{ controller_vars.apt_cache_valid_time | default(3600) | int }}"
     download_retries: "{{ controller_vars.download_retries | default(5) | int }}"
     download_delay: "{{ controller_vars.download_delay | default(15) | int }}"
@@ -499,7 +546,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -541,6 +588,10 @@
         state: stopped
         enabled: false
         masked: true
+      register: unattended_disable_result
+      failed_when: >-
+        unattended_disable_result is failed and
+        ('not found' not in ((unattended_disable_result.msg | default('')) | lower))
 
     - name: Mask automatic apt units that hold dpkg locks
       ansible.builtin.systemd:
@@ -551,6 +602,36 @@
       loop: "{{ apt_lockdown_units | rejectattr('name', 'equalto', 'unattended-upgrades.service') | list }}"
       loop_control:
         label: "{{ item.name }}"
+      register: apt_lockdown_result
+      ignore_errors: true
+
+    - name: Fail if any apt lockdown unit error is not an expected missing unit
+      ansible.builtin.fail:
+        msg: >-
+          Masking {{ item.item.name | default(item.item) }} failed with msg="{{ item.msg | default('') }}" stderr="{{ item.stderr | default('') }}"
+      loop: "{{ apt_lockdown_result.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.name | default(item.item) }}"
+      vars:
+        apt_lockdown_failure_text: >-
+          {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
+        apt_lockdown_missing_phrases:
+          - not found
+          - could not find
+          - could not be found
+          - requested service
+          - could not load
+          - not loaded
+          - does not exist
+          - no such file or directory
+          - no such unit
+          - unit not found
+          - unit could not be found
+          - service does not exist
+          - unknown unit
+      when:
+        - item is failed
+        - apt_lockdown_missing_phrases | select('in', apt_lockdown_failure_text) | list | length == 0
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -576,7 +657,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -638,8 +719,8 @@
     - name: Refresh apt package index on Linux host
       ansible.builtin.apt:
         update_cache: true
-        cache_valid_time: "{{ apt_cache_valid_time }}"
-        lock_timeout: "{{ apt_lock_timeout }}"
+        cache_valid_time: "{{ apt_cache_valid_time | int }}"
+        lock_timeout: "{{ apt_lock_timeout | int }}"
       register: linux_cache_refresh
       retries: "{{ apt_operation_retries }}"
       delay: "{{ apt_operation_delay }}"
@@ -745,7 +826,7 @@
             systemctl status "${unit}" --no-pager 2>&1 || true
           done
           echo "--- systemctl list-timers (filtered) ---"
-          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended' || true
+          systemctl list-timers --all 2>&1 | grep -E 'apt|unattended|snap|packagekit' || true
         }
       args:
         executable: /bin/bash
@@ -822,6 +903,34 @@
       - {label: 'post-quiesce', var: 'dpkg_lock_snapshot_post_quiesce'}
       - {label: 'post-packages', var: 'dpkg_lock_snapshot_post_packages'}
   tasks:
+    - name: Write apt maintenance evidence artifacts per phase
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/deploy_snapshot_phase_report.j2"
+        dest: "{{ deploy_artifacts_dir }}/apt_quiesce_status_{{ phase_suffix }}.txt"
+        mode: '0644'
+      loop: "{{ apt_snapshot_sequence }}"
+      loop_control:
+        label: "{{ item.label }}"
+      vars:
+        phase_var: "{{ item.var }}"
+        phase_label: "{{ item.label }}"
+        report_label: "apt maintenance"
+        phase_suffix: "{{ item.label | regex_replace('[^0-9A-Za-z]+', '_') | regex_replace('(^_+|_+$)', '') | lower }}"
+
+    - name: Write dpkg lock evidence artifacts per phase
+      ansible.builtin.template:
+        src: "{{ templates_dir }}/deploy_snapshot_phase_report.j2"
+        dest: "{{ deploy_artifacts_dir }}/dpkg_lock_report_{{ phase_suffix }}.txt"
+        mode: '0644'
+      loop: "{{ dpkg_snapshot_sequence }}"
+      loop_control:
+        label: "{{ item.label }}"
+      vars:
+        phase_var: "{{ item.var }}"
+        phase_label: "{{ item.label }}"
+        report_label: "dpkg lock"
+        phase_suffix: "{{ item.label | regex_replace('[^0-9A-Za-z]+', '_') | regex_replace('(^_+|_+$)', '') | lower }}"
+
     - name: Write apt maintenance evidence artifact
       ansible.builtin.template:
         src: "{{ templates_dir }}/deploy_apt_quiesce_report.j2"

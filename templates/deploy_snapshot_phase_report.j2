@@ -1,0 +1,15 @@
+{% set any_written = namespace(flag=False) %}
+{% for host in aggregate_hosts %}
+{% if hostvars[host] is defined and hostvars[host][phase_var] is defined %}
+{% if any_written.flag %}
+
+{% endif %}
+### Host: {{ host }}
+---- Phase: {{ phase_label }} ----
+{{ hostvars[host][phase_var].stdout | default('') | trim }}
+{% set any_written.flag = True %}
+{% endif %}
+{% endfor %}
+{% if not any_written.flag %}
+No {{ report_label }} evidence collected for phase {{ phase_label }}.
+{% endif %}
