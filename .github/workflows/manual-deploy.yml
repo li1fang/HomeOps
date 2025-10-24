@@ -1,8 +1,8 @@
 ---
 name: Everyone Is Here (System-Wide Health Check)
 
-on:
-  workflow_dispatch:
+'on':
+  workflow_dispatch: {}
 
 jobs:
   health-check:
