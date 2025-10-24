@@ -187,11 +187,16 @@
       loop_control:
         label: "{{ item.item.name | default(item.item) }}"
       vars:
-        apt_lockdown_failure_text: "{{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default(''))) | lower }}"
+        apt_lockdown_failure_text: >-
+          {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
       when:
         - item is failed
         - "'not found' not in apt_lockdown_failure_text"
+        - "'could not find' not in apt_lockdown_failure_text"
+        - "'could not be found' not in apt_lockdown_failure_text"
         - "'not loaded' not in apt_lockdown_failure_text"
+        - "'does not exist' not in apt_lockdown_failure_text"
+        - "'no such file or directory' not in apt_lockdown_failure_text"
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -599,11 +604,16 @@
       loop_control:
         label: "{{ item.item.name | default(item.item) }}"
       vars:
-        apt_lockdown_failure_text: "{{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default(''))) | lower }}"
+        apt_lockdown_failure_text: >-
+          {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
       when:
         - item is failed
         - "'not found' not in apt_lockdown_failure_text"
+        - "'could not find' not in apt_lockdown_failure_text"
+        - "'could not be found' not in apt_lockdown_failure_text"
         - "'not loaded' not in apt_lockdown_failure_text"
+        - "'does not exist' not in apt_lockdown_failure_text"
+        - "'no such file or directory' not in apt_lockdown_failure_text"
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
