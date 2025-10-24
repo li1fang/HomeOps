@@ -189,14 +189,23 @@
       vars:
         apt_lockdown_failure_text: >-
           {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
+        apt_lockdown_missing_phrases:
+          - not found
+          - could not find
+          - could not be found
+          - requested service
+          - could not load
+          - not loaded
+          - does not exist
+          - no such file or directory
+          - no such unit
+          - unit not found
+          - unit could not be found
+          - service does not exist
+          - unknown unit
       when:
         - item is failed
-        - "'not found' not in apt_lockdown_failure_text"
-        - "'could not find' not in apt_lockdown_failure_text"
-        - "'could not be found' not in apt_lockdown_failure_text"
-        - "'not loaded' not in apt_lockdown_failure_text"
-        - "'does not exist' not in apt_lockdown_failure_text"
-        - "'no such file or directory' not in apt_lockdown_failure_text"
+        - apt_lockdown_missing_phrases | select('in', apt_lockdown_failure_text) | list | length == 0
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
@@ -606,14 +615,23 @@
       vars:
         apt_lockdown_failure_text: >-
           {{ ((item.msg | default('')) ~ ' ' ~ (item.stderr | default('')) ~ ' ' ~ (item.stdout | default(''))) | lower }}
+        apt_lockdown_missing_phrases:
+          - not found
+          - could not find
+          - could not be found
+          - requested service
+          - could not load
+          - not loaded
+          - does not exist
+          - no such file or directory
+          - no such unit
+          - unit not found
+          - unit could not be found
+          - service does not exist
+          - unknown unit
       when:
         - item is failed
-        - "'not found' not in apt_lockdown_failure_text"
-        - "'could not find' not in apt_lockdown_failure_text"
-        - "'could not be found' not in apt_lockdown_failure_text"
-        - "'not loaded' not in apt_lockdown_failure_text"
-        - "'does not exist' not in apt_lockdown_failure_text"
-        - "'no such file or directory' not in apt_lockdown_failure_text"
+        - apt_lockdown_missing_phrases | select('in', apt_lockdown_failure_text) | list | length == 0
 
     - name: Disable apt periodic jobs via apt.conf
       ansible.builtin.copy:
