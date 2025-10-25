@@ -464,6 +464,20 @@
       register: dpkg_lock_snapshot_post_packages
       changed_when: false
 
+    - name: Ensure Loki group exists
+      ansible.builtin.group:
+        name: "{{ loki_service_group }}"
+        system: true
+
+    - name: Ensure Loki user exists
+      ansible.builtin.user:
+        name: "{{ loki_service_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ loki_data_dir }}"
+        create_home: false
+        group: "{{ loki_service_group }}"
+
     - name: Ensure Loki data directories exist
       ansible.builtin.file:
         path: "{{ item }}"
