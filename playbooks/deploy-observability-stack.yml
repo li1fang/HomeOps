@@ -573,6 +573,7 @@
     download_delay: "{{ controller_vars.download_delay | default(15) | int }}"
     download_timeout: "{{ controller_vars.download_timeout | default(60) | int }}"
     apt_quiesce_units: "{{ (apt_lockdown_units | map(attribute='name') | list) | unique }}"
+    linux_kernel_headers_package: "linux-headers-{{ ansible_kernel }}"
   pre_tasks:
     - name: Capture apt maintenance snapshot before window
       ansible.builtin.shell: |
@@ -804,6 +805,28 @@
         msg: >-
           Linux host package bootstrap succeeded after
           {{ linux_base_packages.attempts | default(1) }} attempt(s)
+
+    - name: Ensure running kernel headers are installed before DKMS builds
+      ansible.builtin.apt:
+        name: "{{ linux_kernel_headers_package }}"
+        state: present
+        lock_timeout: "{{ apt_lock_timeout | int }}"
+      register: linux_kernel_headers
+      retries: "{{ apt_operation_retries | int }}"
+      delay: "{{ apt_operation_delay | int }}"
+      until: >-
+        linux_kernel_headers is succeeded or (
+          ((linux_kernel_headers.stderr | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((linux_kernel_headers.stdout | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none and
+          ((linux_kernel_headers.msg | default('')) | regex_search(dpkg_lock_retry_pattern, ignorecase=True)) is none
+        )
+      environment: "{{ apt_environment }}"
+
+    - name: Report kernel header install attempts
+      ansible.builtin.debug:
+        msg: >-
+          Kernel headers install for {{ linux_kernel_headers_package }} succeeded after
+          {{ linux_kernel_headers.attempts | default(1) }} attempt(s)
 
     - name: Create keyring directory
       ansible.builtin.file:
