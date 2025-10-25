@@ -30,6 +30,7 @@
       - ctrl-linux-01
       - ws-01-linux
     freshness_limit_seconds: 600
+    grafana_datasource_path: /etc/grafana/provisioning/datasources/loki.yml
   tasks:
     - name: Collect controller service facts
       ansible.builtin.service_facts:
@@ -115,6 +116,16 @@
           ansible.builtin.fail:
             msg: "Grafana health endpoint check failed; see artifacts/grafana_health_response.json for details."
 
+    - name: Record Grafana health summary for host
+      ansible.builtin.set_fact:
+        grafana_health_summary: >-
+          {{ {
+               'endpoint': grafana_health_endpoint,
+               'status': grafana_health.status | default(0),
+               'json': grafana_health.json | default({}),
+               'content': grafana_health.content | default('')
+             } }}
+
     - name: Query Loki for systemd journal logs
       block:
         - name: Request Loki log query results
@@ -178,6 +189,16 @@
         mode: "0644"
       delegate_to: localhost
 
+    - name: Record Loki query summary for host
+      ansible.builtin.set_fact:
+        loki_query_summary: >-
+          {{ {
+               'query': loki_query_string,
+               'required_hosts': required_log_hosts,
+               'log_map': loki_log_map | default({}),
+               'response': loki_query.json | default({})
+             } }}
+
     - name: Assert Loki has logs for required hosts
       ansible.builtin.assert:
         that:
@@ -200,6 +221,44 @@
       loop: "{{ required_log_hosts }}"
       loop_control:
         label: "{{ item }}"
+
+    - name: Read Grafana provisioning datasources file
+      become: true
+      ansible.builtin.slurp:
+        src: "{{ grafana_datasource_path }}"
+      register: grafana_datasource_slurp
+
+    - name: Parse Grafana provisioning datasources
+      ansible.builtin.set_fact:
+        grafana_datasource_data: >-
+          {{ grafana_datasource_slurp.content | b64decode | from_yaml }}
+
+    - name: Extract Grafana datasources list
+      ansible.builtin.set_fact:
+        grafana_datasources: >-
+          {{ grafana_datasource_data.datasources | default([]) }}
+
+    - name: Assert Loki datasource present in Grafana provisioning
+      ansible.builtin.assert:
+        that:
+          - "(grafana_datasources | selectattr('type', 'equalto', 'loki') | list | length) > 0"
+        fail_msg: "Expected Loki datasource in Grafana provisioning config at {{ grafana_datasource_path }}"
+        success_msg: "Grafana provisioning config defines Loki datasource"
+
+    - name: Write Grafana datasources summary to artifacts
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_grafana_datasources.json"
+        content: "{{ {'path': grafana_datasource_path, 'datasources': grafana_datasources} | to_nice_json }}"
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Record Grafana datasources summary for host
+      ansible.builtin.set_fact:
+        grafana_datasources_summary: >-
+          {{ {
+               'path': grafana_datasource_path,
+               'datasources': grafana_datasources
+             } }}
 
 - name: Verify Alloy service on Linux fleet
   hosts: linux
@@ -229,3 +288,40 @@
                 and ansible_facts.services['alloy.service'].enabled)
         fail_msg: "Alloy service must be running and enabled on {{ inventory_hostname }}"
         success_msg: "Alloy service running and enabled on {{ inventory_hostname }}"
+
+- name: Summarize verification artifacts
+  hosts: localhost
+  gather_facts: false
+  vars:
+    artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+    controller_hosts: "{{ groups['controllers'] | default([]) }}"
+  tasks:
+    - name: Compile Grafana health artifact
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/health.json"
+        content: "{{ grafana_health_artifact | to_nice_json }}"
+        mode: "0644"
+      vars:
+        grafana_health_artifact: >-
+          {{ dict(controller_hosts | zip(controller_hosts | map('extract', hostvars, 'grafana_health_summary') | list)) }}
+      when: controller_hosts | length > 0
+
+    - name: Compile Grafana datasources artifact
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/datasources.json"
+        content: "{{ grafana_datasources_artifact | to_nice_json }}"
+        mode: "0644"
+      vars:
+        grafana_datasources_artifact: >-
+          {{ dict(controller_hosts | zip(controller_hosts | map('extract', hostvars, 'grafana_datasources_summary') | list)) }}
+      when: controller_hosts | length > 0
+
+    - name: Compile Loki query artifact
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/loki_query.json"
+        content: "{{ loki_query_artifact | to_nice_json }}"
+        mode: "0644"
+      vars:
+        loki_query_artifact: >-
+          {{ dict(controller_hosts | zip(controller_hosts | map('extract', hostvars, 'loki_query_summary') | list)) }}
+      when: controller_hosts | length > 0
