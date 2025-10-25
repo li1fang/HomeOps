@@ -85,6 +85,12 @@
       - name: packagekit-offline-update.timer
         state: stopped
         masked: true
+      - name: dkms_autoinstall.service
+        state: stopped
+        masked: true
+      - name: dkms_autoinstal.service
+        state: stopped
+        masked: true
     apt_lockdown_units: *apt_lockdown_units_common
     dpkg_recover_retries: 6
     dpkg_recover_delay: 10
@@ -193,6 +199,10 @@
           - not found
           - could not find
           - could not be found
+          - dkms_autoinstal.service could not be found
+          - dkms_autoinstall.service could not be found
+          - failed to stop dkms_autoinstal.service: unit dkms_autoinstal.service not loaded
+          - failed to stop dkms_autoinstall.service: unit dkms_autoinstall.service not loaded
           - requested service
           - could not load
           - not loaded
@@ -635,6 +645,10 @@
           - not found
           - could not find
           - could not be found
+          - dkms_autoinstal.service could not be found
+          - dkms_autoinstall.service could not be found
+          - failed to stop dkms_autoinstal.service: unit dkms_autoinstal.service not loaded
+          - failed to stop dkms_autoinstall.service: unit dkms_autoinstall.service not loaded
           - requested service
           - could not load
           - not loaded
