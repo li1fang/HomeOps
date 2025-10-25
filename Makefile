@@ -66,8 +66,10 @@ test: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@bash -c "set -euo pipefail; '$(ANSIBLE_PLAYBOOK)' -i localhost, -c local playbooks/ping.yml --check --diff | tee '$(ART_TEST)/ping.log'"
 
 itest: $(VENV_MARKER) $(COLLECTIONS_MARKER)
-	@echo "--- Gate2: Integration tests on self-hosted runner ---"
+	@echo "--- Gate2: Deploy & verify on self-hosted runner ---"
+	@$(MAKE) setup
 	@mkdir -p $(ART_ITEST)
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml
 	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
 
 deploy: $(VENV_MARKER) $(COLLECTIONS_MARKER)

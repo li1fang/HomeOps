@@ -7,7 +7,7 @@
 
 > **TL;DR**  
 > HomeOps 是一个面向个人/家庭基础设施的自动化平台：以 **Ansible** 为引擎、以 **GitHub Actions** 为流水线、以 **“金路径” Make 目标** 为契约，串起从开发 → 验证 → 部署 → 观测的全链路。  
-> 人类与 AI 统一走这 4 步：`make setup → make lint → make test → make itest → (make deploy)`。  
+> 人类与 AI 统一走这 4 步：`make setup → make lint → make test → make itest(部署+验证) → (make deploy)`。
 > 机判口径唯一来源：`docs/verification-spec.md`。AI 指南：`AGENTS.md`。
 
 ---
@@ -36,9 +36,9 @@
 make setup   # Gate0: 自托管运行器的一次性引导（虚拟环境、Ansible 工具链、Collections/roles）
 make lint    # Gate1/Step1: 静态检查（ansible-lint / yamllint / syntax-check）
 make test    # Gate1/Step2: 本地无破坏检查（check mode、幂等探针）
-make itest   # Gate2: 集成测试（自托管 Runner 上的机器可判验收）
+make itest   # Gate2: 部署+验证组合拳（自托管 Runner，先部署再按 Spec 验证）
 # (条件) 仅当 Gate2 绿灯：
-make deploy  # 部署与轻量回归
+make deploy  # 正式释放（人工/主干触发）
 ```
 
 **判分权威**：`make itest` 的通过/失败 **只看** [`docs/verification-spec.md`](docs/verification-spec.md)。  
@@ -56,7 +56,7 @@ flowchart LR
 ```
 
 - **Gate1（云）**：快速反馈语法、风格与无破坏检查。  
-- **Gate2（本地）**：验证连通性、服务状态与端到端行为（以 Spec 为准）。  
+- **Gate2（本地）**：单一 `make itest` 同时负责部署与验证（以 Spec 为准）。
 - **文档变更**：对纯文档/规范，可启用 docs-only bypass（快速合并，保持节奏）。
 
 ---

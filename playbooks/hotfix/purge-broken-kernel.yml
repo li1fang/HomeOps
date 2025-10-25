@@ -1,0 +1,93 @@
+---
+- name: Purge all traces of kernel 6.8.0-84 from ctrl-linux-01
+  hosts: ctrl-linux-01
+  become: true
+  gather_facts: false
+  vars:
+    kernel_version: "6.8.0-84"
+    explicit_kernel_packages:
+      - "linux-image-{{ kernel_version }}-generic"
+      - "linux-image-unsigned-{{ kernel_version }}-generic"
+      - "linux-headers-{{ kernel_version }}-generic"
+      - "linux-headers-{{ kernel_version }}"
+      - "linux-modules-{{ kernel_version }}-generic"
+      - "linux-modules-extra-{{ kernel_version }}-generic"
+      - "linux-tools-{{ kernel_version }}"
+      - "linux-cloud-tools-{{ kernel_version }}"
+  tasks:
+    - name: Collect all installed packages with dpkg
+      ansible.builtin.command:
+        argv:
+          - dpkg-query
+          - -W
+      register: dpkg_query
+      changed_when: false
+
+    - name: Identify packages tied to kernel {{ kernel_version }}
+      vars:
+        kernel_regex: "6\\.8\\.0[-\\.]84"
+        discovered_kernel_packages: >-
+          {{
+            dpkg_query.stdout_lines
+            | default([])
+            | select('match', kernel_regex)
+            | map('regex_replace', '\\t.*', '')
+            | list
+          }}
+      ansible.builtin.set_fact:
+        kernel_packages_to_purge: >-
+          {{
+            (
+              explicit_kernel_packages
+              + discovered_kernel_packages
+            )
+            | select
+            | list
+            | unique
+          }}
+
+    - name: Assert we have kernel packages to purge
+      ansible.builtin.assert:
+        that:
+          - kernel_packages_to_purge | length > 0
+        fail_msg: >-
+          No packages referencing kernel {{ kernel_version }} were found; investigate dpkg state before rerunning the hotfix.
+
+    - name: Force purge broken kernel packages
+      ansible.builtin.apt:
+        name: "{{ kernel_packages_to_purge }}"
+        state: absent
+        purge: true
+
+    - name: Run 'apt --fix-broken install' to repair dependencies
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - --fix-broken
+          - install
+          - -y
+      register: fix_broken
+      changed_when: >
+        '0 upgraded, 0 newly installed' not in
+        ((fix_broken.stdout | default('')) + (fix_broken.stderr | default('')))
+
+    - name: Autoremove residual dependencies
+      ansible.builtin.command:
+        argv:
+          - apt-get
+          - autoremove
+          - -y
+      register: autoremove
+      changed_when: >
+        '0 to remove' not in
+        ((autoremove.stdout | default('')) + (autoremove.stderr | default('')))
+
+    - name: Ensure dpkg has no pending configurations
+      ansible.builtin.command:
+        argv:
+          - dpkg
+          - --configure
+          - -a
+      register: dpkg_configure
+      changed_when: >
+        ((dpkg_configure.stdout | default('')) + (dpkg_configure.stderr | default(''))) | trim | length > 0
