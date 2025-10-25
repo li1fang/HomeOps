@@ -31,12 +31,7 @@ jobs:
       - name: Show tool versions
         run: cat artifacts/test/tools_versions.txt
 
-      - name: Gate2 — make deploy
-        env:
-          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
-        run: make deploy
-
-      - name: Gate2 — make itest
+      - name: Gate2 — make itest (deploy & verify)
         env:
           ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
         run: make itest

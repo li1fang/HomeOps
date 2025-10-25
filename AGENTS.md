@@ -48,9 +48,9 @@ make lint # Gate1.1: static checks (ansible-lint, yamllint, syntax-check)
 
 make test # Gate1.2: local non-destructive checks (check mode / idempotency probes)
 
-make itest # Gate2: self-hosted integration acceptance (machine-verifiable)
+make itest # Gate2: self-hosted deploy & verify combo（先部署，再按 Spec 验证）
 
-make deploy # 条件部署：在 Gate 2 中于 make itest 之前执行，或在 Gate 2 通过后手动/按工作流触发
+make deploy # 条件部署：Gate 2 通过后按需在主干或人工触发（生产释放）
 
 对各命令的职责简述
 
@@ -60,9 +60,9 @@ make lint：静态风格、语法检查，必须限制在仓库源（playbooks/,
 
 make test：在 --check 或等价安全模式下运行关键 playbook，输出到 artifacts/test/。
 
-make itest：在 Gate 2 中，于 make deploy 成功执行之后，在自托管 Runner（带硬件访问）上执行 playbooks/tests/verify_observability.yml，以验证部署结果是否符合 docs/verification-spec.md 的要求，并将验证结果与原始证据写入 artifacts/itest/。
+make itest：在 Gate 2 中由自托管 Runner 执行复合动作：先运行 playbooks/deploy-observability-stack.yml 部署最新变更，再立刻调用 playbooks/tests/verify_observability.yml 依据 docs/verification-spec.md 进行验证，并将证据写入 artifacts/itest/。
 
-make deploy：只有在 make itest 通过并满足分支/变量条件时才允许执行。
+make deploy：保留为最终生产发布手段，仅在 make itest 全绿之后（主干或人工）执行。
 
 Ⅲ. 两阶段指令与触发词（AI 必须严格按此执行）
 
