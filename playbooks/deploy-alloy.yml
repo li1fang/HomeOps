@@ -27,6 +27,12 @@
       - name: apt-daily-upgrade.timer
         state: stopped
         masked: true
+      - name: dkms_autoinstall.service
+        state: stopped
+        masked: true
+      - name: dkms_autoinstal.service
+        state: stopped
+        masked: true
     apt_operation_retries: 5
     apt_operation_delay: 20
     apt_operation_timeout: 600

@@ -46,3 +46,31 @@ jobs:
           name: gate1-artifacts
           path: artifacts/test
           if-no-files-found: warn
+
+  gate2-selfhosted:
+    name: Gate2 (self-hosted) — deploy & verify
+    needs: gate1-cloud
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH credentials
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Gate2 — make itest
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+          ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml
+        run: make itest
+
+      - name: Upload Gate2 artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate2-artifacts
+          path: |
+            artifacts/test
+            artifacts/itest
+          if-no-files-found: warn

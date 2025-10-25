@@ -17,6 +17,7 @@ ANSIBLE_PLAYBOOK := $(VENV_BIN)/ansible-playbook
 ANSIBLE_LINT := $(VENV_BIN)/ansible-lint
 YAMLLINT := $(VENV_BIN)/yamllint
 GALAXY := $(VENV_BIN)/ansible-galaxy
+INSTALL_COLLECTIONS := scripts/install_collections.sh
 LINT_PATHS := playbooks group_vars host_vars inventory templates
 
 export ANSIBLE_CONFIG := $(CURDIR)/ansible.cfg
@@ -35,8 +36,7 @@ $(VENV_MARKER): requirements.txt
 
 $(COLLECTIONS_MARKER): requirements.yml $(VENV_MARKER)
 	@echo "--- installing Ansible collections into $(abspath $(COLLECTIONS_DIR)) ---"
-	@mkdir -p $(COLLECTIONS_DIR)
-	@$(GALAXY) collection install -r requirements.yml -p $(COLLECTIONS_DIR) --force
+	@$(INSTALL_COLLECTIONS) "$(GALAXY)" requirements.yml "$(COLLECTIONS_DIR)"
 	@touch $@
 
 setup: $(VENV_MARKER) $(COLLECTIONS_MARKER)
@@ -66,8 +66,10 @@ test: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@bash -c "set -euo pipefail; '$(ANSIBLE_PLAYBOOK)' -i localhost, -c local playbooks/ping.yml --check --diff | tee '$(ART_TEST)/ping.log'"
 
 itest: $(VENV_MARKER) $(COLLECTIONS_MARKER)
-	@echo "--- Gate2: Integration tests on self-hosted runner ---"
+	@echo "--- Gate2: Deploy & verify on self-hosted runner ---"
+	@$(MAKE) setup
 	@mkdir -p $(ART_ITEST)
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml
 	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
 
 deploy: $(VENV_MARKER) $(COLLECTIONS_MARKER)
