@@ -54,7 +54,7 @@ make deploy # 条件部署：Gate 2 通过后按需在主干或人工触发（�
 
 对各命令的职责简述
 
-make setup：创建/确认可复现的虚拟环境（.venv/）与 collections，产出 artifacts/test/tools_versions.txt。
+make setup：创建/确认可复现的虚拟环境（.venv/）与 collections，产出 artifacts/test/tools_versions.txt。所有 collections 必须从仓库随附的 `vendor/*.tar.gz` 本地解包（禁止访问 galaxy.ansible.com）。
 
 make lint：静态风格、语法检查，必须限制在仓库源（playbooks/,roles/,inventory/ 等），不得扫入 .venv/ / Runner site-packages。
 

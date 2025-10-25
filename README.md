@@ -41,8 +41,9 @@ make itest   # Gate2: 部署+验证组合拳（自托管 Runner，先部署再�
 make deploy  # 正式释放（人工/主干触发）
 ```
 
-**判分权威**：`make itest` 的通过/失败 **只看** [`docs/verification-spec.md`](docs/verification-spec.md)。  
+**判分权威**：`make itest` 的通过/失败 **只看** [`docs/verification-spec.md`](docs/verification-spec.md)。
 **AI 操作手册**：编排规则与提示见 [`AGENTS.md`](AGENTS.md)。
+**离线友好**：`make setup` 会直接从仓库内的 `vendor/*.tar.gz` 解包所需 collections（无需访问 `galaxy.ansible.com`）。
 
 ### 🛤️ CI 跑道分离（云/本地）
 ```mermaid
@@ -86,10 +87,12 @@ flowchart LR
 
 > 以下命令默认在 **自托管运行器**（`ctrl-linux-01`）上执行。
 
-1. **拉起工具链**
+1. **拉起工具链（离线友好）**
    ```bash
    make setup
    ```
+
+   > 运行时会使用仓库随附的 `vendor/*.tar.gz` 来安装 Ansible collections，无需联网。
 
 2. **本地质量门（云端与本地均可）**
    ```bash
