@@ -184,6 +184,10 @@
           - "loki_query.json.data.result is defined"
         fail_msg: "Loki query response missing expected data structure"
 
+    - name: Initialize Loki host log map
+      ansible.builtin.set_fact:
+        loki_log_map: "{{ loki_log_map | default({}) }}"
+
     - name: Capture latest Loki entry per host
       vars:
         host_label: >-
