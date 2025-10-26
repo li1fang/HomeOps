@@ -15,17 +15,11 @@ common:
   compactor_address: "http://{{ loki_advertise_host }}:{{ loki_http_port | int }}"
   ring:
     kvstore:
-      store: memberlist
+      store: inmemory
   storage:
     filesystem:
       chunks_directory: "{{ loki_data_dir }}/chunks"
       rules_directory: "{{ loki_data_dir }}/rules"
-
-memberlist:
-  join_members:
-    - 127.0.0.1
-  bind_addr:
-    - 0.0.0.0
 
 ingester:
   wal:
