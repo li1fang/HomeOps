@@ -69,16 +69,22 @@ frontend:
 frontend_worker:
   frontend_address: "{{ loki_advertise_host }}:{{ loki_grpc_port | int }}"
 
+{% set loki_query_range_config = {
+  'align_queries_with_step': true,
+  'max_retries': 5,
+  'cache_results': true,
+  'cache_results_duration': '5m',
+  'results_cache': {
+    'cache': {
+      'embedded_cache': {
+        'enabled': true,
+        'max_size_mb': 100
+      }
+    }
+  }
+} %}
 query_range:
-  align_queries_with_step: true
-  max_retries: 5
-  cache_results: true
-  cache_results_duration: 5m
-  results_cache:
-    cache:
-      embedded_cache:
-        enabled: true
-        max_size_mb: 100
+  {{ loki_query_range_config | to_nice_yaml(indent=2, sort_keys=False) | indent(2) }}
 
 table_manager:
   retention_deletes_enabled: true
