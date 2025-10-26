@@ -2,6 +2,8 @@
 INVENTORY := inventory/hosts.yaml
 ART_TEST := artifacts/test
 ART_ITEST := artifacts/itest
+ART_TEST_ABS := $(abspath $(ART_TEST))
+ART_ITEST_ABS := $(abspath $(ART_ITEST))
 
 VENV_DIR := .venv
 VENV_BIN := $(VENV_DIR)/bin
@@ -41,14 +43,14 @@ $(COLLECTIONS_MARKER): requirements.yml $(VENV_MARKER)
 
 setup: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate0: bootstrap reproducible toolchain ---"
-	@mkdir -p $(ART_TEST)
+	@mkdir -p $(ART_TEST_ABS)
 	@$(VENV_PYTHON) scripts/record_tool_versions.py \
 	--venv-path "$(VENV_ABS)" \
 	--python "$(VENV_PYTHON)" \
 	--ansible "$(ANSIBLE_CMD)" \
 	--ansible-lint "$(ANSIBLE_LINT)" \
 	--yamllint "$(YAMLLINT)" \
-	--output "$(ART_TEST)/tools_versions.txt"
+	--output "$(ART_TEST_ABS)/tools_versions.txt"
 
 lint: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate1/Step1: Static Analysis ---"
@@ -62,15 +64,15 @@ lint: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 
 test: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate1/Step2: Safe local checks ---"
-	@mkdir -p $(ART_TEST)
-	@bash -c "set -euo pipefail; '$(ANSIBLE_PLAYBOOK)' -i localhost, -c local playbooks/ping.yml --check --diff | tee '$(ART_TEST)/ping.log'"
+	@mkdir -p $(ART_TEST_ABS)
+	@bash -c "set -euo pipefail; '$(ANSIBLE_PLAYBOOK)' -i localhost, -c local playbooks/ping.yml --check --diff | tee '$(ART_TEST_ABS)/ping.log'"
 
 itest: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Gate2: Deploy & verify on self-hosted runner ---"
 	@$(MAKE) setup
-	@mkdir -p $(ART_ITEST)
+	@mkdir -p $(ART_ITEST_ABS)
 	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml
-	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir=$(ART_ITEST)
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir='$(ART_ITEST_ABS)'
 
 deploy: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Deploy (conditional) ---"

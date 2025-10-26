@@ -33,7 +33,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: main-pipeline-artifacts
-          path: |
-            artifacts/test
-            artifacts/itest
-          if-no-files-found: ignore
+          path: artifacts/
+          if-no-files-found: warn

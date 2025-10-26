@@ -70,7 +70,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gate2-artifacts
-          path: |
-            artifacts/test
-            artifacts/itest
+          path: artifacts/
           if-no-files-found: warn
