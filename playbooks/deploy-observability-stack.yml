@@ -34,8 +34,9 @@
     loki_service_user: loki
     loki_service_group: loki
     loki_http_scheme: http
-    loki_http_listen_address: "{{ loki_listen_address | default('0.0.0.0') }}"
+    loki_http_listen_address: "{{ loki_listen_address | default('0.0.0.0', true) }}"
     loki_http_port: "{{ (loki_port | default(3100)) | int }}"
+    loki_grpc_listen_address: "{{ loki_grpc_bind_address | default(loki_http_listen_address) }}"
     loki_grpc_port: 9096
     loki_advertise_host: >-
       {{ loki_advertise_address | default(

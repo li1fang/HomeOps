@@ -3,6 +3,7 @@
 server:
   http_listen_address: "{{ loki_http_listen_address }}"
   http_listen_port: {{ loki_http_port | int }}
+  grpc_listen_address: "{{ loki_grpc_listen_address }}"
   grpc_listen_port: {{ loki_grpc_port | int }}
 
 distributor:
