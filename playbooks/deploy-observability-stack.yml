@@ -22,7 +22,7 @@
   vars:
     deploy_artifacts_dir: "{{ hostvars['localhost'].deploy_artifacts_dir | default('artifacts/itest') }}"
     templates_dir: "{{ playbook_dir }}/../templates"
-    loki_config_path: /etc/loki/config.yaml
+    loki_config_path: /etc/loki/config.yml
     loki_data_dir: /var/lib/loki
     loki_data_subdirs:
       - "{{ loki_data_dir }}"
@@ -31,11 +31,13 @@
       - "{{ loki_data_dir }}/cache"
       - "{{ loki_data_dir }}/chunks"
       - "{{ loki_data_dir }}/compactor"
+      - "{{ loki_data_dir }}/rules"
     loki_service_user: loki
     loki_service_group: loki
     loki_http_scheme: http
-    loki_http_listen_address: "{{ loki_listen_address | default('0.0.0.0') }}"
+    loki_http_listen_address: "{{ loki_listen_address | default('0.0.0.0', true) }}"
     loki_http_port: "{{ (loki_port | default(3100)) | int }}"
+    loki_grpc_listen_address: "{{ loki_grpc_bind_address | default(loki_http_listen_address) }}"
     loki_grpc_port: 9096
     loki_advertise_host: >-
       {{ loki_advertise_address | default(
@@ -494,6 +496,13 @@
         owner: "{{ loki_service_user }}"
         group: "{{ loki_service_group }}"
         mode: "0640"
+      notify: Restart Loki
+
+    - name: Remove legacy Loki configuration path
+      ansible.builtin.file:
+        path: /etc/loki/config.yaml
+        state: absent
+      when: loki_config_path != '/etc/loki/config.yaml'
       notify: Restart Loki
 
     - name: Ensure Loki service is enabled and started

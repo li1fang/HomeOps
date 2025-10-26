@@ -1,90 +1,85 @@
 # templates/loki-config.yaml.j2
-# Single-node Loki configuration tailored for HomeOps
+# Loki 3.x single-node configuration tailored for HomeOps
+auth_enabled: false
+
 server:
   http_listen_address: "{{ loki_http_listen_address }}"
   http_listen_port: {{ loki_http_port | int }}
+  grpc_listen_address: "{{ loki_grpc_listen_address }}"
   grpc_listen_port: {{ loki_grpc_port | int }}
 
-distributor:
+common:
+  instance_addr: "{{ loki_advertise_host }}"
+  path_prefix: "{{ loki_data_dir }}"
+  replication_factor: 1
+  compactor_address: "http://{{ loki_advertise_host }}:{{ loki_http_port | int }}"
   ring:
     kvstore:
-      store: memberlist
+      store: inmemory
+  storage:
+    filesystem:
+      chunks_directory: "{{ loki_data_dir }}/chunks"
+      rules_directory: "{{ loki_data_dir }}/rules"
 
 ingester:
   wal:
     enabled: true
-    dir: {{ loki_data_dir }}/wal
-  lifecycler:
-    address: "{{ loki_advertise_host }}"
-    ring:
-      kvstore:
-        store: memberlist
-      replication_factor: 1
-    final_sleep: 0s
-  chunk_encoding: snappy
-
-memberlist:
-  join_members:
-    - 127.0.0.1
+    dir: "{{ loki_data_dir }}/wal"
 
 schema_config:
   configs:
-    - from: 2020-10-15
-      store: boltdb-shipper
+    - from: 2020-10-24
+      store: tsdb
       object_store: filesystem
-      schema: v11
+      schema: v13
       index:
         prefix: loki_index_
         period: 24h
 
 storage_config:
-  boltdb_shipper:
-    shared_store: filesystem
-    active_index_directory: {{ loki_data_dir }}/index
-    cache_location: {{ loki_data_dir }}/cache
   filesystem:
-    directory: {{ loki_data_dir }}/chunks
+    directory: "{{ loki_data_dir }}/chunks"
+  tsdb_shipper:
+    active_index_directory: "{{ loki_data_dir }}/index"
+    cache_location: "{{ loki_data_dir }}/cache"
 
-compactor:
-  working_directory: {{ loki_data_dir }}/compactor
-  shared_store: filesystem
+query_range:
+  align_queries_with_step: true
+  cache_results: true
+  max_retries: 5
+  results_cache:
+    cache:
+      default_validity: 5m
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
 
 limits_config:
   reject_old_samples: true
   reject_old_samples_max_age: 168h
-
-chunk_store_config:
-  max_look_back_period: 0s
-
-querier:
-  max_concurrent: 20
-  query_ingesters_within: 2h
+  max_query_lookback: 0s
 
 frontend:
   log_queries_longer_than: 5s
   compress_responses: true
   max_outstanding_per_tenant: 1024
-  scheduler_address: "{{ loki_advertise_host }}:{{ loki_grpc_port | int }}"
 
 frontend_worker:
   frontend_address: "{{ loki_advertise_host }}:{{ loki_grpc_port | int }}"
 
-{% set loki_query_range_config = {
-  'align_queries_with_step': true,
-  'max_retries': 5,
-  'cache_results': true,
-  'cache_results_duration': '5m',
-  'results_cache': {
-    'cache': {
-      'embedded_cache': {
-        'enabled': true,
-        'max_size_mb': 100
-      }
-    }
-  }
-} %}
-query_range:
-  {{ loki_query_range_config | to_nice_yaml(indent=2, sort_keys=False) | indent(2) }}
+querier:
+  query_ingesters_within: 2h
+  max_concurrent: 20
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: "{{ loki_data_dir }}/rules"
+
+compactor:
+  working_directory: "{{ loki_data_dir }}/compactor"
+  delete_request_store: filesystem
 
 table_manager:
   retention_deletes_enabled: true
