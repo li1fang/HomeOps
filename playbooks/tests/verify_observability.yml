@@ -214,6 +214,10 @@
         mode: "0644"
       delegate_to: localhost
 
+    - name: DEBUG - Value of loki_log_map before assertion
+      ansible.builtin.debug:
+        var: loki_log_map
+
     - name: Assert Loki has logs for required hosts
       ansible.builtin.assert:
         that:
