@@ -79,7 +79,8 @@ querier:
 
 ruler:
   storage:
-    filesystem:
+    type: local
+    local:
       directory: "{{ loki_data_dir }}/rules"
 
 compactor:
