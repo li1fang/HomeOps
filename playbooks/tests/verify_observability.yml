@@ -42,20 +42,11 @@
       delegate_to: localhost
 
     - name: Assert required services are running and enabled
-      ansible.builtin.assert:
-        that:
-          - "item.unit in ansible_facts.services"
-          - "ansible_facts.services[item.unit].state == 'running'"
-          - >-
-            (ansible_facts.services[item.unit].status is defined
-             and ansible_facts.services[item.unit].status == 'enabled')
-            or (ansible_facts.services[item.unit].enabled is defined
-                and ansible_facts.services[item.unit].enabled)
-        fail_msg: "Service {{ item.friendly }} must be running and enabled on controller {{ inventory_hostname }}"
-        success_msg: "Service {{ item.friendly }} running and enabled on controller {{ inventory_hostname }}"
+      ansible.builtin.include_tasks: tasks/verify_required_service.yaml
       loop: "{{ required_services }}"
       loop_control:
-        label: "{{ item.unit }}"
+        loop_var: required_service
+        label: "{{ required_service.unit }}"
 
     - name: Probe Loki readiness endpoint
       block:

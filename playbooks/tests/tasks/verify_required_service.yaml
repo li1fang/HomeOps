@@ -1,0 +1,42 @@
+---
+- name: Verify required service state
+  block:
+    - name: Verify service state and enablement
+      ansible.builtin.assert:
+        that:
+          - "required_service.unit in ansible_facts.services"
+          - "ansible_facts.services[required_service.unit].state == 'running'"
+          - >-
+            (ansible_facts.services[required_service.unit].status is defined
+             and ansible_facts.services[required_service.unit].status == 'enabled')
+            or (ansible_facts.services[required_service.unit].enabled is defined
+                and ansible_facts.services[required_service.unit].enabled)
+        fail_msg: >-
+          Service {{ required_service.friendly }} must be running and enabled on controller {{ inventory_hostname }}
+        success_msg: >-
+          Service {{ required_service.friendly }} running and enabled on controller {{ inventory_hostname }}
+  rescue:
+    - name: Collect Loki service journal after assertion failure
+      ansible.builtin.command:
+        cmd: journalctl -u loki.service --no-pager -n 200
+      register: loki_journal_capture
+      changed_when: false
+      failed_when: false
+      when: required_service.unit == 'loki.service'
+
+    - name: Write Loki service journal artifact
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_journal.log"
+        content: |-
+          {{ loki_journal_capture.stdout | default('') }}
+          {% if loki_journal_capture.stderr is defined and loki_journal_capture.stderr | length > 0 %}
+          --- stderr ---
+          {{ loki_journal_capture.stderr }}
+          {% endif %}
+        mode: "0644"
+      delegate_to: localhost
+      when: required_service.unit == 'loki.service'
+
+    - name: Fail after required service assertion failure
+      ansible.builtin.fail:
+        msg: "{{ ansible_failed_result.msg | default('Service verification failed; see Loki journal artifact for details.') }}"
