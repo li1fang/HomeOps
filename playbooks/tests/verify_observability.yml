@@ -115,6 +115,32 @@
           ansible.builtin.fail:
             msg: "Grafana health endpoint check failed; see artifacts/grafana_health_response.json for details."
 
+    - name: Check Grafana Loki datasource file metadata
+      ansible.builtin.stat:
+        path: /etc/grafana/provisioning/datasources/loki.yml
+      register: grafana_datasource_stat
+
+    - name: Assert Grafana Loki datasource file exists
+      ansible.builtin.assert:
+        that:
+          - grafana_datasource_stat.stat.exists
+          - not grafana_datasource_stat.stat.isdir
+        fail_msg: "Grafana Loki datasource definition missing at /etc/grafana/provisioning/datasources/loki.yml"
+
+    - name: Confirm Grafana Loki datasource references Loki type
+      ansible.builtin.command:
+        cmd: >-
+          grep -F 'type: loki' /etc/grafana/provisioning/datasources/loki.yml
+      register: grafana_datasource_check
+      changed_when: false
+
+    - name: Record Grafana datasource verification snippet
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_grafana_datasource_check.log"
+        content: "{{ grafana_datasource_check.stdout | default('') }}\n"
+        mode: "0644"
+      delegate_to: localhost
+
     - name: Query Loki for systemd journal logs
       block:
         - name: Request Loki log query results

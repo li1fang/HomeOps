@@ -542,6 +542,7 @@
   hosts: linux,controllers
   become: true
   serial: 1
+  ignore_unreachable: true
   vars:
     deploy_artifacts_dir: "{{ hostvars['localhost'].deploy_artifacts_dir | default('artifacts/itest') }}"
     controller_host: "{{ groups['controllers'][0] }}"

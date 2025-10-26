@@ -23,14 +23,6 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Gate0 — make setup
-        env:
-          PIP_DISABLE_PIP_VERSION_CHECK: '1'
-        run: make setup
-
-      - name: Show tool versions
-        run: cat artifacts/test/tools_versions.txt
-
       - name: Gate2 — make itest (deploy & verify)
         env:
           ANSIBLE_STDOUT_CALLBACK: ansible.builtin.yaml

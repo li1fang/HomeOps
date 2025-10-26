@@ -36,7 +36,7 @@ $(VENV_MARKER): requirements.txt
 $(COLLECTIONS_MARKER): requirements.yml $(VENV_MARKER)
 	@echo "--- installing Ansible collections from ./vendor into $(abspath $(COLLECTIONS_DIR)) ---"
 	@mkdir -p $(COLLECTIONS_DIR)
-	@$(GALAXY) collection install -r requirements.yml -p $(COLLECTIONS_DIR) --force
+	@$(GALAXY) collection install -r requirements.yml -p $(COLLECTIONS_DIR) --force --offline
 	@touch $@
 
 setup: $(VENV_MARKER) $(COLLECTIONS_MARKER)
