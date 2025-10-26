@@ -137,9 +137,18 @@
 
     - name: Query Loki for systemd journal logs
       block:
+        - name: Compute Loki query window
+          ansible.builtin.set_fact:
+            loki_query_window_end_ns: "{{ (ansible_date_time.epoch | int) * 1000000000 }}"
+            loki_query_window_start_ns: "{{ ((ansible_date_time.epoch | int) - (freshness_limit_seconds | int)) * 1000000000 }}"
+            loki_range_query_url: >-
+              {{ 'http://127.0.0.1:3100/loki/api/v1/query_range?query=' ~ (loki_query_string | urlencode)
+                 ~ '&direction=backward&limit=500&step=60&start=' ~ loki_query_window_start_ns
+                 ~ '&end=' ~ loki_query_window_end_ns }}
+
         - name: Request Loki log query results
           ansible.builtin.uri:
-            url: "http://127.0.0.1:3100/loki/api/v1/query?query={{ loki_query_string | urlencode }}"
+            url: "{{ loki_range_query_url }}"
             method: GET
             return_content: true
             status_code: 200
