@@ -27,6 +27,7 @@
     grafana_health_endpoint: "http://127.0.0.1:3000/api/health"
     loki_query_string: '{job="systemd-journal"}'
     freshness_limit_seconds: 600
+    expected_loki_hosts: "{{ ((groups['controllers'] | default([])) + (groups['linux'] | default([]))) | unique }}"
   tasks:
     - name: Collect controller service facts
       ansible.builtin.service_facts:
@@ -187,6 +188,118 @@
           - "(loki_query.json.data.result | default([])) | length > 0"
         fail_msg: "Loki query returned no log streams; expected recent systemd journal entries"
         success_msg: "Loki query returned one or more log streams"
+
+    - name: Ensure expected Loki hosts list is not empty
+      ansible.builtin.assert:
+        that:
+          - expected_loki_hosts | length > 0
+        fail_msg: "No expected Loki hosts resolved from inventory groups 'controllers' or 'linux'"
+
+    - name: Initialize Loki host coverage tracking structures
+      ansible.builtin.set_fact:
+        loki_host_summary: {}
+        loki_missing_host_streams: []
+
+    - name: Track Loki streams missing host-identifying labels
+      ansible.builtin.set_fact:
+        loki_missing_host_streams: "{{ loki_missing_host_streams + [stream_labels] }}"
+      loop: "{{ loki_query.json.data.result | default([]) }}"
+      loop_control:
+        label: "{{ stream_labels | to_json }}"
+      vars:
+        stream_labels: "{{ item.stream | default({}) }}"
+        host_label: "{{ stream_labels.host | default(stream_labels.hostname | default(stream_labels.instance | default(stream_labels.node | default('')))) }}"
+      when: host_label | length == 0
+
+    - name: Capture latest Loki entry per host
+      ansible.builtin.set_fact:
+        loki_host_summary: >-
+          {{
+            loki_host_summary | combine({
+              host_label: selected_summary
+            }, recursive=True)
+          }}
+      loop: "{{ loki_query.json.data.result | default([]) }}"
+      loop_control:
+        label: "{{ host_label | default('missing-host-label') }}"
+      vars:
+        stream_labels: "{{ item.stream | default({}) }}"
+        host_label: "{{ stream_labels.host | default(stream_labels.hostname | default(stream_labels.instance | default(stream_labels.node | default('')))) }}"
+        raw_entry_timestamps: "{{ item.values | default([]) | map('first') | list }}"
+        numeric_entry_timestamps: "{{ raw_entry_timestamps | map('int') | list }}"
+        newest_entry_ns: "{{ (numeric_entry_timestamps | max) if numeric_entry_timestamps | length > 0 else 0 }}"
+        newest_entry_epoch: "{{ ((newest_entry_ns | float) / 1000000000) | int }}"
+        summary: >-
+          {{
+            {
+              'labels': stream_labels,
+              'latest_timestamp_ns': newest_entry_ns,
+              'latest_timestamp_epoch': newest_entry_epoch,
+              'age_seconds': (ansible_date_time.epoch | int) - newest_entry_epoch,
+              'total_entries': item.values | length
+            }
+          }}
+        existing_summary: "{{ loki_host_summary.get(host_label) }}"
+        selected_summary: >-
+          {{
+            summary if not (
+              existing_summary is mapping and
+              (existing_summary['latest_timestamp_ns'] | default(0)) >= newest_entry_ns
+            ) else existing_summary
+          }}
+      when:
+        - host_label | length > 0
+        - numeric_entry_timestamps | length > 0
+
+    - name: Compute required hosts missing Loki logs
+      ansible.builtin.set_fact:
+        loki_hosts_missing_logs: "{{ expected_loki_hosts | difference(loki_host_summary.keys() | list) }}"
+
+    - name: Persist Loki host summary artifact
+      ansible.builtin.copy:
+        dest: "{{ artifacts_dir }}/{{ inventory_hostname }}_loki_host_summary.json"
+        content: >-
+          {{
+            {
+              'expected_hosts': expected_loki_hosts,
+              'observed_hosts': loki_host_summary,
+              'missing_required_hosts': loki_hosts_missing_logs,
+              'missing_host_label_streams': loki_missing_host_streams,
+              'freshness_limit_seconds': freshness_limit_seconds
+            } | to_nice_json
+          }}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Fail if any Loki streams lack host labels
+      ansible.builtin.fail:
+        msg: >-
+          Loki query returned stream(s) without host-identifying labels; see
+          {{ artifacts_dir }}/{{ inventory_hostname }}_loki_host_summary.json for details.
+      when: loki_missing_host_streams | length > 0
+
+    - name: Fail if Loki logs missing for required hosts
+      ansible.builtin.fail:
+        msg: >-
+          Loki query did not return logs for required hosts: {{ loki_hosts_missing_logs }}.
+          Expected hosts: {{ expected_loki_hosts }}
+      when: loki_hosts_missing_logs | length > 0
+
+    - name: Assert Loki log freshness for required hosts
+      ansible.builtin.assert:
+        that:
+          - "(loki_host_summary[loki_required_host]['age_seconds'] | int) <= (freshness_limit_seconds | int)"
+        fail_msg: >-
+          Latest Loki entry for {{ loki_required_host }} is
+          {{ loki_host_summary[loki_required_host]['age_seconds'] | int }}s old; freshness
+          limit is {{ freshness_limit_seconds }}s.
+        success_msg: >-
+          Loki logs for {{ loki_required_host }} within freshness window — age
+          {{ loki_host_summary[loki_required_host]['age_seconds'] | int }}s (limit {{ freshness_limit_seconds }}s).
+      loop: "{{ expected_loki_hosts }}"
+      loop_control:
+        loop_var: loki_required_host
+        label: "{{ loki_required_host }}"
 
 - name: Verify Alloy service on Linux fleet
   hosts: linux
