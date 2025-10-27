@@ -1,6 +1,6 @@
 loki.source.journal "system" {
   labels = {
-    job  = "systemd-journal"
+    job  = "systemd-journal",
     host = "{{ inventory_hostname }}"
   }
   forward_to = [loki.write.default.receiver]
