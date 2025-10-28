@@ -969,10 +969,50 @@
       notify: Restart Alloy
 
     - name: Ensure Alloy service is enabled and started
-      ansible.builtin.systemd:
-        name: alloy
-        state: started
-        enabled: true
+      block:
+        - name: Enable and start Alloy service
+          ansible.builtin.systemd:
+            name: alloy
+            state: started
+            enabled: true
+          register: alloy_service_result
+      rescue:
+        - name: Capture Alloy journald logs on failure
+          ansible.builtin.command:
+            cmd: journalctl -u alloy.service -n 200 --no-pager
+          register: alloy_journal_diagnostic
+          changed_when: false
+          failed_when: false
+
+        - name: Emit Alloy journald diagnostics header
+          ansible.builtin.debug:
+            msg: "Alloy journald tail (last 200 lines)"
+
+        - name: Emit Alloy journald diagnostics lines
+          ansible.builtin.debug:
+            var: alloy_journal_diagnostic.stdout_lines
+
+        - name: Persist Alloy journald diagnostics artifact
+          ansible.builtin.copy:
+            dest: "{{ deploy_artifacts_dir }}/alloy_journal_{{ inventory_hostname }}.log"
+            content: "{{ (alloy_journal_diagnostic.stdout | default('')) ~ '\n' }}"
+            mode: '0644'
+          delegate_to: localhost
+
+        - name: Build Alloy service failure message
+          ansible.builtin.set_fact:
+            alloy_service_failure_message: |-
+              {% if alloy_service_result is defined %}
+              {{ alloy_service_result.msg | default(alloy_service_result.stderr | default('See Alloy journald diagnostics above for details.')) }}
+              {% else %}
+              See Alloy journald diagnostics above for details.
+              {% endif %}
+
+        - name: Fail due to Alloy service start failure
+          ansible.builtin.fail:
+            msg: |-
+              Failed to start alloy service on {{ inventory_hostname }}.
+              {{ alloy_service_failure_message | trim }}
 
   handlers:
     - name: Restart Alloy
