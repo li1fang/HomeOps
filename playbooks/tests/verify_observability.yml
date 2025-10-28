@@ -233,9 +233,9 @@
           {{
             {
               'labels': stream_labels,
-              'latest_timestamp_ns': newest_entry_ns,
-              'latest_timestamp_epoch': newest_entry_epoch,
-              'age_seconds': (ansible_date_time.epoch | int) - newest_entry_epoch,
+              'latest_timestamp_ns': newest_entry_ns | int,
+              'latest_timestamp_epoch': newest_entry_epoch | int,
+              'age_seconds': (ansible_date_time.epoch | int) - (newest_entry_epoch | int),
               'total_entries': item.get('values', []) | length
             }
           }}
