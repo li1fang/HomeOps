@@ -225,7 +225,7 @@
       vars:
         stream_labels: "{{ item.stream | default({}) }}"
         host_label: "{{ stream_labels.host | default(stream_labels.hostname | default(stream_labels.instance | default(stream_labels.node | default('')))) }}"
-        raw_entry_timestamps: "{{ item.values | default([]) | map('first') | list }}"
+        raw_entry_timestamps: "{{ item.get('values', []) | map('first') | list }}"
         numeric_entry_timestamps: "{{ raw_entry_timestamps | map('int') | list }}"
         newest_entry_ns: "{{ (numeric_entry_timestamps | max) if numeric_entry_timestamps | length > 0 else 0 }}"
         newest_entry_epoch: "{{ ((newest_entry_ns | float) / 1000000000) | int }}"
@@ -236,7 +236,7 @@
               'latest_timestamp_ns': newest_entry_ns,
               'latest_timestamp_epoch': newest_entry_epoch,
               'age_seconds': (ansible_date_time.epoch | int) - newest_entry_epoch,
-              'total_entries': item.values | length
+              'total_entries': item.get('values', []) | length
             }
           }}
         existing_summary: "{{ loki_host_summary.get(host_label) }}"
