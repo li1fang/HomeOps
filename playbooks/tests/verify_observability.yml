@@ -227,7 +227,7 @@
         host_label: "{{ stream_labels.host | default(stream_labels.hostname | default(stream_labels.instance | default(stream_labels.node | default('')))) }}"
         raw_entry_timestamps: "{{ item.get('values', []) | map('first') | list }}"
         numeric_entry_timestamps: "{{ raw_entry_timestamps | map('int') | list }}"
-        newest_entry_ns: "{{ (numeric_entry_timestamps | max) if numeric_entry_timestamps | length > 0 else 0 }}"
+        newest_entry_ns: "{{ ((numeric_entry_timestamps | max) if numeric_entry_timestamps | length > 0 else 0) | int }}"
         newest_entry_epoch: "{{ ((newest_entry_ns | float) / 1000000000) | int }}"
         summary: >-
           {{
@@ -244,7 +244,7 @@
           {{
             summary if not (
               existing_summary is mapping and
-              (existing_summary['latest_timestamp_ns'] | default(0)) >= newest_entry_ns
+              (existing_summary['latest_timestamp_ns'] | default(0) | int) >= (newest_entry_ns | int)
             ) else existing_summary
           }}
       when:
