@@ -25,10 +25,27 @@
       - curl
       - software-properties-common
       - ca-certificates
+    kernel_release: "{{ ansible_kernel }}"
+    kernel_release_base: >-
+      {{ kernel_release | regex_replace('-(generic|lowlatency)$', '') }}
+    kernel_header_candidates: >-
+      {{ [
+          'linux-headers-' ~ kernel_release,
+          'linux-headers-' ~ kernel_release_base
+        ] | unique }}
+    user_defined_kernel_headers: >-
+      {{ nvidia_kernel_headers_package
+         if nvidia_kernel_headers_package is defined else [] }}
+    user_defined_kernel_headers_list: >-
+      {{ user_defined_kernel_headers
+         if user_defined_kernel_headers is sequence and not (user_defined_kernel_headers is string)
+         else ([user_defined_kernel_headers] if user_defined_kernel_headers else []) }}
+    kernel_header_packages: >-
+      {{ (kernel_header_candidates + user_defined_kernel_headers_list) | unique }}
     gpu_prereq_packages: >-
       {{ (
           (nvidia_prereq_packages | default(nvidia_prereq_packages_default)) +
-          [nvidia_kernel_headers_package | default('linux-headers-' ~ ansible_kernel)]
+          kernel_header_packages
         ) | unique }}
     nouveau_blacklist_path: "{{ nvidia_blacklist_file | default('/etc/modprobe.d/blacklist-nouveau.conf') }}"
   pre_tasks:
@@ -38,6 +55,20 @@
           - ansible_os_family | lower == 'debian'
         fail_msg: >-
           GPU preparation currently supports Debian/Ubuntu families only; detected {{ ansible_os_family }}.
+    - name: Unmask packagekit service to allow apt operations
+      ansible.builtin.systemd:
+        name: packagekit.service
+        masked: false
+        enabled: false
+        state: stopped
+      when: ansible_service_mgr == 'systemd'
+
+    - name: Ensure dpkg is in a consistent state before installing packages
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_preconfigure
+      changed_when: false
+      failed_when: dpkg_preconfigure.rc not in [0]
   tasks:
     - name: Update apt cache for GPU prerequisites
       ansible.builtin.apt:
@@ -49,6 +80,57 @@
         name: "{{ gpu_prereq_packages }}"
         state: present
         install_recommends: false
+        force_apt_get: true
+
+    - name: Gather kernel header linker script status (generic)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+
+    - name: Gather kernel header linker script status (base release)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+
+    - name: Purge kernel headers when linker script missing
+      ansible.builtin.apt:
+        name: "{{ kernel_header_packages }}"
+        state: absent
+        purge: true
+        force_apt_get: true
+      register: purge_kernel_headers
+      when: not kernel_module_lds_generic.stat.exists and not kernel_module_lds_base.stat.exists
+
+    - name: Reinstall kernel headers after purge
+      ansible.builtin.apt:
+        name: "{{ kernel_header_packages }}"
+        state: present
+        install_recommends: false
+        force_apt_get: true
+      register: reinstall_kernel_headers
+      when: purge_kernel_headers is defined and purge_kernel_headers.changed
+
+    - name: Refresh generic kernel header linker script status
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+      when: (purge_kernel_headers is defined and purge_kernel_headers.changed) or
+            (reinstall_kernel_headers is defined and reinstall_kernel_headers.changed)
+
+    - name: Refresh base kernel header linker script status
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+      when: (purge_kernel_headers is defined and purge_kernel_headers.changed) or
+            (reinstall_kernel_headers is defined and reinstall_kernel_headers.changed)
+
+    - name: Assert kernel headers provide module linker script
+      ansible.builtin.assert:
+        that:
+          - kernel_module_lds_generic.stat.exists or kernel_module_lds_base.stat.exists
+        fail_msg: >-
+          Required kernel header linker script module.lds was not found after reinstalling
+          linux-headers for {{ kernel_release }}.
 
     - name: Blacklist nouveau kernel driver
       ansible.builtin.copy:
@@ -69,6 +151,14 @@
         name: "{{ nvidia_driver_package | default('nvidia-driver-535') }}"
         state: present
         update_cache: false
+        force_apt_get: true
+
+    - name: Configure remaining packages after driver installation
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_postconfigure
+      changed_when: false
+      failed_when: dpkg_postconfigure.rc not in [0]
 
     - name: Ensure nvidia-persistenced service is enabled
       ansible.builtin.systemd:
