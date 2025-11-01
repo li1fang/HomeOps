@@ -102,7 +102,8 @@
         purge: true
         force_apt_get: true
       register: purge_kernel_headers
-      when: not kernel_module_lds_generic.stat.exists and not kernel_module_lds_base.stat.exists
+      when: not (kernel_module_lds_generic.get('stat', {}).get('exists', false))
+            and not (kernel_module_lds_base.get('stat', {}).get('exists', false))
 
     - name: Reinstall kernel headers after purge
       ansible.builtin.apt:
@@ -130,7 +131,8 @@
     - name: Assert kernel headers provide module linker script
       ansible.builtin.assert:
         that:
-          - kernel_module_lds_generic.stat.exists or kernel_module_lds_base.stat.exists
+          - kernel_module_lds_generic.get('stat', {}).get('exists', false)
+            or kernel_module_lds_base.get('stat', {}).get('exists', false)
         fail_msg: >-
           Required kernel header linker script module.lds was not found after reinstalling
           linux-headers for {{ kernel_release }}.
