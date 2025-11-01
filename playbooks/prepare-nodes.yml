@@ -470,6 +470,13 @@
       delay: 10
       until: nvidia_smi_check.rc == 0
 
+    - name: Reboot node to synchronize kernel state
+      ansible.builtin.reboot:
+        msg: HomeOps GPU preparation reboot to finalize kernel updates
+        reboot_timeout: 1200
+        post_reboot_delay: 10
+
+
     - name: Restore kernel package holds after GPU preparation
       ansible.builtin.command:
         cmd: "apt-mark hold {{ item }}"
