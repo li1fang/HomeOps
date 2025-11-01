@@ -1,0 +1,510 @@
+---
+- name: Ensure GPU preparation artifact directory exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    gpu_prep_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Ensure GPU preparation artifact directory
+      ansible.builtin.file:
+        path: "{{ gpu_prep_artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+- name: Prepare GPU nodes for Kubernetes and CUDA baseline
+  hosts: gpu_nodes
+  become: true
+  gather_facts: true
+  vars:
+    gpu_prep_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+    nvidia_prereq_packages_default:
+      - build-essential
+      - dkms
+      - gcc
+      - make
+      - pciutils
+      - curl
+      - software-properties-common
+      - ca-certificates
+    kernel_release: "{{ ansible_kernel }}"
+    kernel_release_base: >-
+      {{ kernel_release | regex_replace('-(generic|lowlatency)$', '') }}
+    kernel_header_candidates: >-
+      {{ (
+          ['linux-headers-' ~ kernel_release] +
+          (
+            ['linux-headers-' ~ kernel_release_base ~ '-generic']
+            if kernel_release != kernel_release_base else []
+          )
+        ) | unique }}
+    user_defined_kernel_headers: >-
+      {{ nvidia_kernel_headers_package
+         if nvidia_kernel_headers_package is defined else [] }}
+    user_defined_kernel_headers_list: >-
+      {{ user_defined_kernel_headers
+         if user_defined_kernel_headers is sequence and not (user_defined_kernel_headers is string)
+         else ([user_defined_kernel_headers] if user_defined_kernel_headers else []) }}
+    kernel_header_packages: >-
+      {{ (kernel_header_candidates + user_defined_kernel_headers_list) | unique }}
+    gpu_prereq_packages: >-
+      {{ (
+          (nvidia_prereq_packages | default(nvidia_prereq_packages_default)) +
+          kernel_header_packages
+        ) | unique }}
+    nouveau_blacklist_path: "{{ nvidia_blacklist_file | default('/etc/modprobe.d/blacklist-nouveau.conf') }}"
+    kernel_hold_targets:
+      - "linux-image-{{ kernel_release }}"
+      - "linux-headers-{{ kernel_release }}"
+      - "linux-modules-{{ kernel_release }}"
+      - "linux-modules-extra-{{ kernel_release }}"
+  pre_tasks:
+    - name: Assert supported operating system family
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family | lower == 'debian'
+        fail_msg: >-
+          GPU preparation currently supports Debian/Ubuntu families only; detected {{ ansible_os_family }}.
+    - name: Unmask packagekit service to allow apt operations
+      ansible.builtin.systemd:
+        name: packagekit.service
+        masked: false
+        enabled: false
+        state: stopped
+      when: ansible_service_mgr == 'systemd'
+
+    - name: Capture currently held packages
+      ansible.builtin.command:
+        cmd: apt-mark showhold
+      register: apt_mark_showhold
+      changed_when: false
+      failed_when: apt_mark_showhold.rc not in [0]
+
+    - name: Identify held kernel packages for running release
+      ansible.builtin.set_fact:
+        held_kernel_packages_before: "{{ (kernel_hold_targets | intersect(apt_mark_showhold.stdout_lines | default([]))) | to_json | from_json }}"
+
+    - name: Unlock held kernel packages for GPU preparation
+      ansible.builtin.command:
+        cmd: "apt-mark unhold {{ item }}"
+      loop: "{{ held_kernel_packages_before | default([]) }}"
+      register: kernel_unhold_results
+      changed_when: held_kernel_packages_before | length > 0
+      failed_when: kernel_unhold_results is failed
+      when: held_kernel_packages_before | length > 0
+
+    - name: Ensure dpkg is in a consistent state before installing packages
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_preconfigure
+      changed_when: false
+      failed_when: dpkg_preconfigure.rc not in [0]
+  tasks:
+    - name: Force purge conflicting 6.14.0-29 kernel packages
+      ansible.builtin.shell: |
+        set -o pipefail
+        packages="$(dpkg-query -W -f='${Package}\n' \
+          'linux-image-6.14.0-29*' \
+          'linux-headers-6.14.0-29*' \
+          'linux-modules-6.14.0-29*' \
+          'linux-modules-nvidia-550-6.14.0-29*' 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\+$//')"
+        if [ -n "${packages}" ]; then
+          echo "Purging packages: ${packages}"
+          DEBIAN_FRONTEND=noninteractive apt-get purge -y --allow-change-held-packages ${packages}
+        else
+          echo "No conflicting 6.14.0-29 kernel packages detected."
+        fi
+      args:
+        executable: /bin/bash
+      register: purge_conflicting_kernels
+      changed_when: purge_conflicting_kernels.rc == 0 and 'Purging packages:' in (purge_conflicting_kernels.stdout | default(''))
+      failed_when: purge_conflicting_kernels.rc not in [0]
+
+    - name: Reconfigure dpkg after kernel package purge
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_post_purge
+      changed_when: false
+      failed_when: dpkg_post_purge.rc not in [0]
+
+    - name: Repair dependencies after kernel package purge  # noqa command-instead-of-module
+      ansible.builtin.command:
+        cmd: apt-get -f install
+      register: apt_fix_dependencies
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      changed_when: false
+      failed_when: apt_fix_dependencies.rc not in [0]
+
+    - name: Collect kernel state snapshot for diagnostics
+      block:
+        - name: Capture running kernel release
+          ansible.builtin.command:
+            cmd: uname -r
+          register: kernel_uname_r
+          changed_when: false
+          failed_when: false
+
+        - name: Persist running kernel release artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_uname-r.log"
+            content: |-
+              Command: uname -r
+              Return code: {{ kernel_uname_r.rc }}
+              --- stdout ---
+              {{ kernel_uname_r.stdout | default('') }}
+              {% if kernel_uname_r.stderr is defined and kernel_uname_r.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_uname_r.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture installed kernel images
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-image-'
+          args:
+            executable: /bin/bash
+          register: kernel_installed_images
+          changed_when: false
+          failed_when: false
+
+        - name: Persist installed kernel images artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_installed-kernels.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-image-'
+              Return code: {{ kernel_installed_images.rc }}
+              --- stdout ---
+              {{ kernel_installed_images.stdout | default('') }}
+              {% if kernel_installed_images.stderr is defined and kernel_installed_images.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_installed_images.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture installed kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-headers-'
+          args:
+            executable: /bin/bash
+          register: kernel_installed_headers
+          changed_when: false
+          failed_when: false
+
+        - name: Persist installed kernel headers artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_installed-headers.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-headers-'
+              Return code: {{ kernel_installed_headers.rc }}
+              --- stdout ---
+              {{ kernel_installed_headers.stdout | default('') }}
+              {% if kernel_installed_headers.stderr is defined and kernel_installed_headers.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_installed_headers.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture /usr/src directory listing
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -alR /usr/src
+          args:
+            executable: /bin/bash
+          register: usr_src_listing
+          changed_when: false
+          failed_when: false
+
+        - name: Persist /usr/src directory listing artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_usr-src-listing.log"
+            content: |-
+              Command: ls -alR /usr/src
+              Return code: {{ usr_src_listing.rc }}
+              --- stdout ---
+              {{ usr_src_listing.stdout | default('') }}
+              {% if usr_src_listing.stderr is defined and usr_src_listing.stderr | length > 0 %}
+              --- stderr ---
+              {{ usr_src_listing.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+    - name: Check if broken NVIDIA modules package is installed
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' linux-modules-nvidia-550-6.14.0-29-generic
+      register: nvidia_modules_status
+      changed_when: false
+      failed_when: false
+
+    - name: Force remove broken NVIDIA modules package with dpkg
+      ansible.builtin.command:
+        cmd: dpkg --remove --force-remove-reinstreq linux-modules-nvidia-550-6.14.0-29-generic
+      register: nvidia_modules_force_remove
+      changed_when: nvidia_modules_force_remove.rc == 0
+      failed_when: nvidia_modules_force_remove.rc not in [0]
+      when:
+        - nvidia_modules_status.rc == 0
+        - "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
+
+    - name: Ensure dpkg is reconfigured after removing broken packages
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_post_force_remove
+      changed_when: false
+      failed_when: dpkg_post_force_remove.rc not in [0]
+
+    - name: Clean apt package cache before GPU prerequisite installation  # noqa command-instead-of-module
+      ansible.builtin.command:
+        cmd: apt-get clean
+      register: apt_clean_cache
+      changed_when: false
+
+    - name: Update apt cache for GPU prerequisites
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install GPU prerequisite packages
+      ansible.builtin.apt:
+        name: "{{ gpu_prereq_packages }}"
+        state: present
+        install_recommends: false
+        force_apt_get: true
+
+    - name: Gather kernel header linker script status (generic)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+
+    - name: Gather kernel header linker script status (base release)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+
+    - name: Purge kernel headers when linker script missing
+      ansible.builtin.apt:
+        name: "{{ kernel_header_packages }}"
+        state: absent
+        purge: true
+        force_apt_get: true
+      register: purge_kernel_headers
+      when: not (kernel_module_lds_generic.get('stat', {}).get('exists', false))
+            and not (kernel_module_lds_base.get('stat', {}).get('exists', false))
+
+    - name: Reinstall kernel headers after purge
+      ansible.builtin.apt:
+        name: "{{ kernel_header_packages }}"
+        state: present
+        install_recommends: false
+        force_apt_get: true
+      register: reinstall_kernel_headers
+      when: purge_kernel_headers is defined and purge_kernel_headers.changed
+
+    - name: Refresh generic kernel header linker script status
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+      when: (purge_kernel_headers is defined and purge_kernel_headers.changed) or
+            (reinstall_kernel_headers is defined and reinstall_kernel_headers.changed)
+
+    - name: Refresh base kernel header linker script status
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+      when: (purge_kernel_headers is defined and purge_kernel_headers.changed) or
+            (reinstall_kernel_headers is defined and reinstall_kernel_headers.changed)
+
+    - name: Collect kernel header diagnostics when linker script missing
+      when: not (kernel_module_lds_generic.get('stat', {}).get('exists', false))
+            and not (kernel_module_lds_base.get('stat', {}).get('exists', false))
+      block:
+        - name: Capture apt reinstall output for kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            DEBIAN_FRONTEND=noninteractive \
+            apt-get install --reinstall -y linux-headers-{{ kernel_release }}
+          args:
+            executable: /bin/bash
+          register: kernel_header_apt_reinstall
+          changed_when: false
+          failed_when: false
+
+        - name: Persist apt reinstall diagnostic artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_apt_reinstall.log"
+            content: |-
+              Command: DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y linux-headers-{{ kernel_release }}
+              Return code: {{ kernel_header_apt_reinstall.rc }}
+              --- stdout ---
+              {{ kernel_header_apt_reinstall.stdout | default('') }}
+              {% if kernel_header_apt_reinstall.stderr is defined and kernel_header_apt_reinstall.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_apt_reinstall.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture dpkg query for kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-headers-{{ kernel_release }}'
+          args:
+            executable: /bin/bash
+          register: kernel_header_dpkg_query
+          changed_when: false
+          failed_when: false
+
+        - name: Persist dpkg query diagnostic artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_dpkg_query.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-headers-{{ kernel_release }}'
+              Return code: {{ kernel_header_dpkg_query.rc }}
+              --- stdout ---
+              {{ kernel_header_dpkg_query.stdout | default('') }}
+              {% if kernel_header_dpkg_query.stderr is defined and kernel_header_dpkg_query.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_dpkg_query.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture kernel header directory listing
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -alR /usr/src/linux-headers-{{ kernel_release }}
+          args:
+            executable: /bin/bash
+          register: kernel_header_dir_listing
+          changed_when: false
+          failed_when: false
+
+        - name: Persist kernel header directory listing artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_header_dir_listing.log"
+            content: |-
+              Command: ls -alR /usr/src/linux-headers-{{ kernel_release }}
+              Return code: {{ kernel_header_dir_listing.rc }}
+              --- stdout ---
+              {{ kernel_header_dir_listing.stdout | default('') }}
+              {% if kernel_header_dir_listing.stderr is defined and kernel_header_dir_listing.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_dir_listing.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+    - name: Blacklist nouveau kernel driver
+      ansible.builtin.copy:
+        dest: "{{ nouveau_blacklist_path }}"
+        content: |
+          # Managed by HomeOps GPU preparation
+          blacklist nouveau
+          options nouveau modeset=0
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Rebuild initramfs after nouveau blacklist
+        - Remove nouveau kernel module if loaded
+
+    - name: Install NVIDIA driver package
+      ansible.builtin.apt:
+        name: "{{ nvidia_driver_package | default('nvidia-driver-535') }}"
+        state: present
+        update_cache: false
+        force_apt_get: true
+
+    - name: Configure remaining packages after driver installation
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_postconfigure
+      changed_when: false
+      failed_when: dpkg_postconfigure.rc not in [0]
+
+    - name: Reboot node to synchronize kernel state
+      ansible.builtin.reboot:
+        msg: HomeOps GPU preparation reboot to finalize kernel updates
+        reboot_timeout: 1200
+        post_reboot_delay: 10
+
+    - name: Gather kernel header linker script status post reboot (generic)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+
+    - name: Gather kernel header linker script status post reboot (base release)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+
+    - name: Assert kernel headers provide module linker script
+      ansible.builtin.assert:
+        that:
+          - kernel_module_lds_generic.get('stat', {}).get('exists', false)
+            or kernel_module_lds_base.get('stat', {}).get('exists', false)
+        fail_msg: >-
+          Required kernel header linker script module.lds was not found after reinstalling
+          linux-headers for {{ kernel_release }}.
+
+    - name: Ensure nvidia-persistenced service is enabled
+      ansible.builtin.systemd:
+        name: nvidia-persistenced
+        state: started
+        enabled: true
+      register: nvidia_persistenced_state
+      failed_when: >-
+        nvidia_persistenced_state is failed and
+        (
+          'not found' not in (nvidia_persistenced_state.msg | default('') | lower)
+          and 'could not be found' not in (nvidia_persistenced_state.msg | default('') | lower)
+        )
+
+    - name: Gather lspci output for NVIDIA adapters
+      ansible.builtin.command:
+        cmd: lspci -nn
+      register: lspci_output
+      changed_when: false
+
+    - name: Assert NVIDIA GPU detected
+      ansible.builtin.assert:
+        that:
+          - "'NVIDIA' in lspci_output.stdout"
+        fail_msg: >-
+          No NVIDIA GPU detected on {{ inventory_hostname }}. lspci output stored in task result for diagnostics.
+
+    - name: Run nvidia-smi to validate driver readiness
+      ansible.builtin.command:
+        cmd: nvidia-smi
+      register: nvidia_smi_check
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: nvidia_smi_check.rc == 0
+
+
+    - name: Restore kernel package holds after GPU preparation
+      ansible.builtin.command:
+        cmd: "apt-mark hold {{ item }}"
+      loop: "{{ held_kernel_packages_before | default([]) }}"
+      register: kernel_rehold_results
+      changed_when: held_kernel_packages_before | length > 0
+      failed_when: kernel_rehold_results is failed
+      when: held_kernel_packages_before | length > 0
+
+  handlers:
+    - name: Rebuild initramfs after nouveau blacklist
+      ansible.builtin.command:
+        cmd: update-initramfs -u
+      changed_when: true
+
+    - name: Remove nouveau kernel module if loaded
+      ansible.builtin.command:
+        cmd: modprobe -r nouveau
+      register: remove_nouveau
+      failed_when: remove_nouveau.rc not in [0, 1]
+      changed_when: remove_nouveau.rc == 0
