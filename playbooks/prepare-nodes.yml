@@ -29,11 +29,13 @@
     kernel_release_base: >-
       {{ kernel_release | regex_replace('-(generic|lowlatency)$', '') }}
     kernel_header_candidates: >-
-      {{ [
-          'linux-headers-' ~ kernel_release,
-          'linux-headers-' ~ kernel_release_base,
-          'linux-headers-' ~ kernel_release_base ~ '-generic'
-        ] | unique }}
+      {{ (
+          ['linux-headers-' ~ kernel_release] +
+          (
+            ['linux-headers-' ~ kernel_release_base ~ '-generic']
+            if kernel_release != kernel_release_base else []
+          )
+        ) | unique }}
     user_defined_kernel_headers: >-
       {{ nvidia_kernel_headers_package
          if nvidia_kernel_headers_package is defined else [] }}
