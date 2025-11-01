@@ -16,6 +16,7 @@
   become: true
   gather_facts: true
   vars:
+    gpu_prep_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
     nvidia_prereq_packages_default:
       - build-essential
       - dkms
@@ -127,6 +128,86 @@
       register: kernel_module_lds_base
       when: (purge_kernel_headers is defined and purge_kernel_headers.changed) or
             (reinstall_kernel_headers is defined and reinstall_kernel_headers.changed)
+
+    - name: Collect kernel header diagnostics when linker script missing
+      when: not (kernel_module_lds_generic.get('stat', {}).get('exists', false))
+            and not (kernel_module_lds_base.get('stat', {}).get('exists', false))
+      block:
+        - name: Capture apt reinstall output for kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            DEBIAN_FRONTEND=noninteractive \
+            apt-get install --reinstall -y linux-headers-{{ kernel_release }}
+          args:
+            executable: /bin/bash
+          register: kernel_header_apt_reinstall
+          changed_when: false
+          failed_when: false
+
+        - name: Persist apt reinstall diagnostic artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_apt_reinstall.log"
+            content: |-
+              Command: DEBIAN_FRONTEND=noninteractive apt-get install --reinstall -y linux-headers-{{ kernel_release }}
+              Return code: {{ kernel_header_apt_reinstall.rc }}
+              --- stdout ---
+              {{ kernel_header_apt_reinstall.stdout | default('') }}
+              {% if kernel_header_apt_reinstall.stderr is defined and kernel_header_apt_reinstall.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_apt_reinstall.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture dpkg query for kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-headers-{{ kernel_release }}'
+          args:
+            executable: /bin/bash
+          register: kernel_header_dpkg_query
+          changed_when: false
+          failed_when: false
+
+        - name: Persist dpkg query diagnostic artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_dpkg_query.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-headers-{{ kernel_release }}'
+              Return code: {{ kernel_header_dpkg_query.rc }}
+              --- stdout ---
+              {{ kernel_header_dpkg_query.stdout | default('') }}
+              {% if kernel_header_dpkg_query.stderr is defined and kernel_header_dpkg_query.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_dpkg_query.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture kernel header directory listing
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -alR /usr/src/linux-headers-{{ kernel_release }}
+          args:
+            executable: /bin/bash
+          register: kernel_header_dir_listing
+          changed_when: false
+          failed_when: false
+
+        - name: Persist kernel header directory listing artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_header_dir_listing.log"
+            content: |-
+              Command: ls -alR /usr/src/linux-headers-{{ kernel_release }}
+              Return code: {{ kernel_header_dir_listing.rc }}
+              --- stdout ---
+              {{ kernel_header_dir_listing.stdout | default('') }}
+              {% if kernel_header_dir_listing.stderr is defined and kernel_header_dir_listing.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_header_dir_listing.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
 
     - name: Assert kernel headers provide module linker script
       ansible.builtin.assert:
