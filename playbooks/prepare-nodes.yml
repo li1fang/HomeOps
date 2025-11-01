@@ -80,11 +80,21 @@
         cache_valid_time: 3600
 
     - name: Install GPU prerequisite packages
-      ansible.builtin.apt:
-        name: "{{ gpu_prereq_packages }}"
-        state: present
-        install_recommends: false
-        force_apt_get: true
+      block:
+        - name: Purge inconsistent kernel header packages before install
+          ansible.builtin.apt:
+            name: "{{ kernel_header_packages }}"
+            state: absent
+            purge: true
+            force_apt_get: true
+          when: kernel_header_packages | length > 0
+
+        - name: Install GPU prerequisite packages after purge
+          ansible.builtin.apt:
+            name: "{{ gpu_prereq_packages }}"
+            state: present
+            install_recommends: false
+            force_apt_get: true
 
     - name: Gather kernel header linker script status (generic)
       ansible.builtin.stat:
