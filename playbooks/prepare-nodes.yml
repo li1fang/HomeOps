@@ -74,23 +74,29 @@
       changed_when: false
       failed_when: dpkg_preconfigure.rc not in [0]
   tasks:
-    - name: Break dpkg dependency loop by removing broken NVIDIA modules package
-      block:
-        - name: Check if linux-modules-nvidia package is installed
-          ansible.builtin.command:
-            cmd: dpkg-query -W -f='${Status}' linux-modules-nvidia-550-6.14.0-29-generic
-          register: nvidia_modules_status
-          changed_when: false
-          failed_when: false
+    - name: Check if broken NVIDIA modules package is installed
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' linux-modules-nvidia-550-6.14.0-29-generic
+      register: nvidia_modules_status
+      changed_when: false
+      failed_when: false
 
-        - name: Force remove broken linux-modules-nvidia package
-          ansible.builtin.command:
-            cmd: dpkg --remove --force-depends linux-modules-nvidia-550-6.14.0-29-generic
-          register: nvidia_modules_force_remove
-          changed_when: "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
-          when:
-            - nvidia_modules_status.rc == 0
-            - "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
+    - name: Force remove broken NVIDIA modules package with dpkg
+      ansible.builtin.command:
+        cmd: dpkg --remove --force-remove-reinstreq linux-modules-nvidia-550-6.14.0-29-generic
+      register: nvidia_modules_force_remove
+      changed_when: nvidia_modules_force_remove.rc == 0
+      failed_when: nvidia_modules_force_remove.rc not in [0]
+      when:
+        - nvidia_modules_status.rc == 0
+        - "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
+
+    - name: Ensure dpkg is reconfigured after removing broken packages
+      ansible.builtin.command:
+        cmd: dpkg --configure -a
+      register: dpkg_post_force_remove
+      changed_when: false
+      failed_when: dpkg_post_force_remove.rc not in [0]
 
     - name: Update apt cache for GPU prerequisites
       ansible.builtin.apt:
@@ -98,21 +104,11 @@
         cache_valid_time: 3600
 
     - name: Install GPU prerequisite packages
-      block:
-        - name: Purge inconsistent kernel header packages before install
-          ansible.builtin.apt:
-            name: "{{ kernel_header_packages }}"
-            state: absent
-            purge: true
-            force_apt_get: true
-          when: kernel_header_packages | length > 0
-
-        - name: Install GPU prerequisite packages after purge
-          ansible.builtin.apt:
-            name: "{{ gpu_prereq_packages }}"
-            state: present
-            install_recommends: false
-            force_apt_get: true
+      ansible.builtin.apt:
+        name: "{{ gpu_prereq_packages }}"
+        state: present
+        install_recommends: false
+        force_apt_get: true
 
     - name: Gather kernel header linker script status (generic)
       ansible.builtin.stat:
