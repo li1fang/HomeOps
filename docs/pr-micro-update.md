@@ -1,218 +1,229 @@
-# PR Micro‑Update Handbook（v2.1）
-> **目的**：在**同一个 PR** 内，以“证据优先 & 两阶段（G→R）”模式，连续下达**小更新（Micro‑Update）**指令，直至满足原始验收标准（或触发停机分流）。  
-> **适用对象**：AI 工程师（Codex）与 Reviewer；适用于 HomeOps 全仓，特别是 Gate2（`make itest`）驱动的验收闭环。  
-> **权威口径**：流程以 `AGENTS.md` 为准；Gate2 判分以 `docs/verification-spec.md` 为唯一来源。
+# PR 微更新（Micro‑Update）SOP · v3.0
+> **目的**：将“PR 内迭代修正”固化为**证据优先**、**一次过**、**机器可判**的流程，并与 `Analyzer`（见 `docs/analyzer-sop.md`）无缝协作。  
+> **适用对象**：Planner（规划者）、Analyzer（分析者）、Codex（实现者/AI 代理）、Maintainer（人类维护者）。
 
 ---
 
-## 0. 核心哲学
-- **证据优先（Evidence‑First）**：一切判断以 **CI Run + 工件（Artifacts）** 为证，不依赖口头“猜测”。
-- **两阶段纪律（G → R）**：
-  - **G（Generation）**：只提交补丁，不填写 `Testing Done`；**禁止写 HOW**（实现细节）。
-  - **R（Reporting）**：CI 完成后，**仅从本次 Run** 回填 `Testing Done`（Run URL/Job 结论/工件清单/原文摘录）。
-- **同 PR 连续小更新**：以 **Part n** 方式逐步迭代，直到满足原 Acceptance，或触发停机分流。
-
-```mermaid
-flowchart LR
-  A[PR 打开/更新] --> B{Gate1 云端
-setup/lint/test}
-  B -->|绿| C{Gate2 自托管
-itest(部署+验证)}
-  B -->|红| M1[Micro-Update: 修复 Gate1]
-  C -->|绿| D[满足验收 → 合并]
-  C -->|红| M2[Micro-Update: 诊断/修复 Gate2]
-  M1 --> B
-  M2 --> C
-  M2 -->|超 3 次无证据增量| S[停机/分流：新 Issue 或调整验收]
-```
+## 0. TL;DR（给着急的人）
+- **何时用**：PR 仍未满足其 Acceptance（无论 CI 绿/红），需要在**同一 PR** 内继续修正时。
+- **两种模式**：
+  - **Standard Fix**：证据已充分，直接指向一次性补丁与“机器可判”验收。
+  - **Diagnostic‑First**：证据不足，**先采集证据**（如打印/落盘/收集日志），再进入 Standard Fix。
+- **与 Analyzer 协作**：
+  1) 先触发 **Step 1（轻信息）**，获取失败锚点与客观事实；
+  2) 若仍不足，再触发 **Step 2（智能问答）**，**只问一轮（stop_after: 1）**；
+  3) 若仍不足 → 直接出一份 **Diagnostic‑First** 微更新去“加仪表/落证据”。
+- **硬约束**：只写“问题与验收”，**不写实现**；所有断言**可机判**；所有证据**来自 CI/Artifacts**。
 
 ---
 
-## 1. 小更新的固定骨架（SOP 模板）
-> 复制以下模板，替换花括号占位符；**不写方案**、**不改验收**、**只在范围内动作**。
+## 1. 角色与术语
+- **Planner（规划者）**：依据 Issue/Spec/CI 产出**微更新指令**（本 SOP 的使用者）。
+- **Analyzer（分析者）**：**无状态**地解析 CI 日志与工件，输出**结构化事实**（见 `analyzer-sop.md`）。
+- **Codex（实现者/AI）**：按微更新指令在**同一 PR** 提交补丁，不得“自述测试”。
+- **Argus（守证者）**：可选机器人，核对“PR 描述 ↔ 运行证据”的一致性。
+
+---
+
+## 2. 触发条件（When）
+- PR **未**满足其 Acceptance：
+  - 红灯：失败位置或原因已明确/不明确；
+  - 绿灯但**带偏差**：PCR（PR Close Review）记录“接受偏差”，需继续补回（如 V3.7 的 L2 Host Coverage）。
+- 仅适用于**继续在同一 PR** 内推进；若范围变更或目标切换，请**新开 Issue/PR**。
+
+---
+
+## 3. 与 Analyzer 的协作契约
+> Full spec 见 `docs/analyzer-sop.md`。此处给 Planner 的实操要点。
+
+### 3.1 调用顺序
+1) **Step 1（轻信息）**：
+   - 提供：最小背景（Issue/PR 号、Acceptance 摘要）、最新 `run_url`、**精挑**工件列表；
+   - 期望：`Anchor`（失败锚点）、`Facts`（客观事实）、`Insight`（一句话洞察）。  
+   - 结束语由 Analyzer 固定输出：**“若足够请继续；不足请提问。”**
+2) **Step 2（智能问答）**（可选、**只一轮**）：
+   - 提供：**具体问题列表**（表格式、窄口径），设置 `stop_after: 1`；
+   - 期望：逐问逐答 + **证据引用** + 置信度。
+
+> **一次过**：若 Step 2 仍不足以直接出 Standard Fix，则**立即**切换到 Diagnostic‑First 微更新，**不要**陷入聊天循环。
+
+### 3.2 轻量约束（建议而非强制）
+- **工件选择**：优先 `artifacts/itest/*`、`artifacts/deploy/*` 的**小文件**（JSON 片段优先）；
+- **体量预算**（建议）：
+  - Light 输入 ≤ **10KB**；
+  - Step 2 问题 ≤ **3 条**；
+  - Analyzer 回答 ≤ **5KB**。
+
+### 3.3 PR 中的调用写法（内嵌注释块）
+在 PR 评论或描述里内嵌一段 **Analyzer 指令块**，便于机器人/人类统一读取：
 
 ```markdown
-Title: [修正 {PR 名/迭代号}] 验收失败：{一句话证据结论}
-
-致：工程师（Codex）
-
-1) 上一轮 CI 的“客观证据”
-- Run: {Actions URL}（run_id={id}）
-- Commit: {short_sha}
-- Jobs:
-  - Gate1: {job_name} = {结论}
-  - Gate2: {job_name} = {结论}
-- Artifacts（路径 + 尺寸/计数）:
-  - {相对路径}（{大小/行数/条数}）
-- 关键原文（≤3 行，来自本次 Run 日志/响应体）
-> {原文1}
-> {原文2}
-
-2) 该 PR 未结束的原因（对照验收）
-- 本 PR 的 Acceptance（摘要）：{引用原验收关键条款或 `docs/verification-spec.md` 具体条目}
-- 对照结果：{证据 X} 未满足 {验收 Y} → **未达到**。
-
-3) 当前问题的准确定义
-- 标准模式：{基于证据给出“现在的失败点”的定义（不写解决路径）}
-- 诊断优先：{当现象反常/矛盾时，要求先产出诊断证据并给出诊断目标}
-
-4) 你的“小更新”任务（只在白名单范围内）
-- **范围白名单**：{允许修改的文件/任务名/段落}
-- **动作意图**（不写 HOW）：
-  - 标准：{例如“让 readiness 重试直至 200，并落盘 JSON”}
-  - 诊断：{例如“插入 debug 任务打印 loki_log_map；新增 itest_debug.json”}
-- **改动预算**：最多 {N} 个任务；**禁止修改**：{黑名单项}
-- **Testing Done**：保持 **PENDING‑CI**；待 R 阶段回填
-
-5) 不变的验收标准（机器可判）
-- Gate1：`make setup` / `make lint` / `make test` 均 **exit 0**
-- Gate2：`make itest` 必须执行，且：
-  - {可测信号1：HTTP 200 / systemd active / result[].length>0 …}
-  - {可测信号2}
-- 新增/变更工件：{文件路径}（必须存在；大小>0；如适用包含关键字段）
-- 诊断型小更新（如适用）：允许红灯，但**新增证据**必须出现（见上）
-```
-
-> **纪律重申**：
-> - 禁止写“怎么实现”（HOW）；
-> - 禁止要求修改 runner 全局环境；
-> - PR 描述中的 `Testing Done` 在 **R 阶段**以 CI 事实回填。
-
----
-
-## 2. 写作清单（提交前 1 分钟）
-- [ ] 标题合规，**一句话证据结论**明确（例如 “/ready 503” / “query_range 400” / “变量未定义”）  
-- [ ] **Run URL / run_id / SHA / Job 结论 / 工件（含大小或条数）**五件套齐全  
-- [ ] 关键原文 **≤3 行**，直接粘贴自本次 Run  
-- [ ] 范围白名单与改动预算写清，黑名单明确  
-- [ ] 验收信号**可机判**（HTTP/status/result len/文件存在与大小）  
-- [ ] 明确“**禁写 HOW** / **Testing Done = PENDING‑CI**”
-
-### 10 秒复审
-- [ ] 事实（证据）与判断（对照验收）分段清晰  
-- [ ] 是否指向 `docs/verification-spec.md` 或 PR 原验收？  
-- [ ] 是否只聚焦**一个失败点 → 一个小更新目标**？
-
----
-
-## 3. 标准化小更新范式库（速查棋谱）
-> **意图导向，不写 HOW**；每条配**可机判信号**与**工件要求**。
-
-### 3.1 就绪探针波动（503 `/ready`）
-- **意图**：为 readiness 增加 `until` 重试/延迟，最终 200  
-- **验收**：`Request Loki readiness status` 最终 OK；`ctrl-linux-01_loki_ready_response.json` 存在且 `status=200`  
-- **范围**：`playbooks/tests/verify_observability.yml` 对应 block
-
-### 3.2 查询类型错误（400 `query` vs `query_range`）
-- **意图**：使用 `/query_range` 并添加最近 5–10 分钟时间窗  
-- **验收**：`Request Loki log query results` 返回 200；`loki_query.json.data.result | length > 0`
-
-### 3.3 变量未定义（Undefined var）
-- **意图**：在查询前**计算**必须的时间戳变量，保证**始终定义**  
-- **验收**：`Compute window` 任务 OK；后续查询 200
-
-### 3.4 结果映射为空（标签缺失）
-- **意图**：改为**非空结果断言**（不依赖 host 标签）  
-- **验收**：`result | length > 0`；保存 `loki_query.json`
-
-### 3.5 诊断注入（Debug 工具化）
-- **意图**：断言前输出关键变量；新增 `itest_debug.json`  
-- **验收**：日志出现 debug 输出；文件存在且大小 > 0（例如 >200B）
-
-> 以上 5 条已覆盖 V3.5 → V3.7 的全部修复路径，可直接复用。
-
----
-
-## 4. 停机 / 分流判据（避免无效内卷）
-出现任一条，暂停小更新 → 转新 Issue / 调整验收口径：
-- 同一失败点 **连续 3 次** 小更新仍**无证据增量**（日志/工件无新增）  
-- 拟议改动**超出范围**（例如需重构角色/部署）  
-- 目标**互斥**（两个小更新的验收相互打架）  
-- Gate2 必须执行**破坏性动作**影响生产（需先设计影子环境或回滚策略）
-
----
-
-## 5. 两段触发词（G / R）
-
-**G 阶段（实现小更新，禁止填 `Testing Done`）**
-```text
-Repository: HomeOps
-Task: Update PR #<ID> – Part <n> (Micro‑Update)
-
-严格遵守 AGENTS.md 与 docs/verification-spec.md。
-本次仅在范围白名单内做“小更新”，不写实现方案。
-Testing Done = PENDING‑CI；等待 CI 结束后进入 R 阶段。
-```
-
-**R 阶段（CI 绿后，引用证据回填）**
-```text
-Repository: HomeOps
-Task: Fill Testing Done for PR #<ID>
-
-CI 全绿链接：<run URL>
-请仅从本次 run/Artifacts 提取事实，回填：Run URL / SHA / Gate1&Gate2 结论 / 工件列表（含大小或条数） / 关键原文（≤3 行）。
-```
-
----
-
-## 6. 元数据（可选，便于审计/自动化）
-在 PR 描述末尾附加可机读区块：
-```md
-<!-- pr-update-meta v1
-task_id: <如 VERIFY-FIX-104-PART3>
-domain: homeops
-iteration: <整数，从 1 递增>
-phase: G | R
-run_id: <Actions run_id 或留空>
+<!-- ANALYZER:STEP1
+repo: li1fang/HomeOps
+pr: 106
+run_url: https://github.com/li1fang/HomeOps/actions/runs/xxxxxxxx
+artifacts:
+  - artifacts/itest/ctrl-linux-01_loki_query_response.json
+  - artifacts/itest/ctrl-linux-01_service_facts.json
+background: "V3.8 恢复 L2 Host Coverage，当前失败于 'Capture latest Loki entry per host'。"
 -->
 ```
 
+```markdown
+<!-- ANALYZER:STEP2
+questions:
+  - id: Q1
+    text: "data.result[].stream 是否包含 'host'？若有，唯一值集合是什么？"
+  - id: Q2
+    text: "data.result 的长度是否 > 0？"
+stop_after: 1
+-->
+```
+
+Analyzer 的回复（含**证据引用**）应被粘贴回 PR 评论，作为微更新的**证据基座**。
+
 ---
 
-## 7. 反模式（坚决避免）
-- 写“怎么实现”（HOW）、贴命令/脚本  
-- 更改 Gate2 判分口径（除非另开规范 PR）  
-- 扩大改动面：引入新的角色/变量/服务（超出范围）  
-- 不引用本次 Run 的**真实证据**（URL、原文、工件大小）  
-- 在 G 阶段擅自填写 `Testing Done`
+## 4. 微更新的三种“模式”
+> 三选一；均要求“机器可判”。
+
+### 4.1 Standard Fix（标准模式）
+**适用**：证据已足，问题边界明确（如类型转换、端点/参数错误等）。  
+**目标**：一次性补丁 + 直达 Acceptance 的断言。  
+**常见 Allowed/Forbidden**：
+- Allowed：与失败点**直接相关**的仓内文件；
+- Forbidden：改变 Spec、改变流水线结构、扩大范围。
+
+### 4.2 Diagnostic‑First（诊断优先）
+**适用**：证据不足；需先**加仪表/落证据**（例如扩展 `rescue`、保存 `journalctl`、打印片段）。  
+**目标**：CI 仍可失败，但**必须**新增可溯的工件/日志，成为下一轮 Standard Fix 的事实来源。
+
+### 4.3 Acceptance Relaxation（临时下调）
+**适用**：为确保“纵深推进”，临时以更小粒度验收（例如由“按主机断言”降为“非空断言”）。  
+**约束**：必须在 PR 描述与 PCR 中**显式记录偏差**与**回补计划**（后续 Issue 编号）。
 
 ---
 
-## 8. 附：最小示例（诊断型红灯验收）
-> 用于“变量未定义” → 注入 debug 的场景。
+## 5. 微更新的统一骨架（模板）
+> 复制以下模板，替换花括号；**绝不**写“怎么做”。
 
 ```markdown
-Title: [修正 V3.7 Part 4] 验收失败：断言前 loki_log_map 未定义
+Title: [修正 {Version/Part}] 验收失败：{一句话证据标签}
+致： 工程师（Codex）
 
-致：工程师（Codex）
+1) 上一次 CI 证据锚点（Anchors）
+- Gate：{Gate1/Gate2} → {✅/❌}（link: {run_url#job}）
+- 失败点：`{TASK / 文件}`
+- 摘录：
+  ```
+  {关键日志片段或 JSON 片段（≤10 行）}
+  ```
 
-1) 上一轮 CI 的“客观证据”
-- Run: https://github.com/<org>/<repo>/actions/runs/<run_id>（run_id=123456789）
-- Commit: a1b2c3d
-- Jobs: Gate1=success，Gate2=failed（itest）
-- Artifacts: artifacts/itest/loki_query.json（12.4KB）
-- 关键原文（≤3 行）
-> 'loki_log_map' is undefined
-> TASK [Assert Loki has logs for required hosts]
+2) Gap → Acceptance Map（逐条对照）
+| 验收条款（Spec/PR Acceptance） | 本次 CI 的证据 | 结论 | 缺口/下一步 |
+| --- | --- | --- | --- |
+| {条款A} | {证据} | {✅/❌} | {说明} |
+| {条款B} | {证据} | {✅/❌} | {说明} |
 
-2) 该 PR 未结束的原因（对照验收）
-- Acceptance 摘要：Gate2 需完成范围查询并断言数据有效
-- 对照：虽已 200 且有结果，但断言阶段变量未定义 → 未达到
+3) 我们现在的问题（Problem Statement）
+- {基于 Analyzer/工件得到的**客观事实**，不下结论到“实现方案”。}
 
-3) 当前问题的准确定义
-- 断言前的聚合变量 loki_log_map 未被创建或被覆盖，需先产出现场证据定位
+4) 你的“小更新”任务（Action, no How）
+- **Mode**: {standard | diagnostic | relaxation}
+- **Allowed Changes**: {最小变更范围（仓内路径列表）}
+- **Forbidden Changes**: {禁止改动项}
+- **目标**：{一次性目标，如“修复类型转换后通过 L2 Host Coverage”}
+- **交付**：在**同一 PR** 提交补丁；PR 描述保持 `PENDING-CI`（G 阶段），待 CI 成功后再回填。
 
-4) 你的“小更新”任务（只在白名单内）
-- 范围白名单：playbooks/tests/verify_observability.yml（断言前一行）
-- 动作意图（不写 HOW）：插入 debug 任务打印 loki_log_map；新增 itest_debug.json
-- 改动预算：最多 1 个任务；禁止改动查询/部署
-- Testing Done：PENDING‑CI
+5) 不变的验收标准（Machine‑verifiable）
+- Gate1：`make setup / make lint / make test` = 0；
+- Gate2：`make itest` 产生 `artifacts/itest/*`；
+- 关键断言：{列举任务名 + 可测信号 + 文件名}；
+- 失败允许（仅 diagnostic）：CI 可失败，但**必须**新增 {artifact 路径}。
 
-5) 不变的验收标准（机器可判）
-- Gate1 全绿；Gate2 执行
-- 日志中出现 debug 输出；`artifacts/itest/itest_debug.json` 存在且大小>0
+附：Analyzer 协同（可选）
+<!-- 如需，请粘贴 ANALYZER:STEP1 / STEP2 指令块（见 §3.3） -->
 ```
 
 ---
 
-**End of file.**
+## 6. 写作清单（Planner）
+- [ ] **只写问题+验收**，绝不写实现；
+- [ ] **证据锚点**：run_url + 工件片段 + 失败任务名；
+- [ ] **与 Spec 对齐**：逐条映射到 `docs/verification-spec.md`；
+- [ ] **一次过**：若 Step 2 后仍不清晰 → 直接 Diagnostic‑First；
+- [ ] **产物路径稳定**：`artifacts/test/*`、`artifacts/itest/*`；
+- [ ] **大小控制**：粘贴片段 ≤10 行，链接代替长文。
+
+---
+
+## 7. 常用片段（可直接拷贝）
+
+### 7.1 Standard Fix（示例：Loki 时间戳类型错误）
+```markdown
+Title: [修正 V3.8 Part 5] 验收失败：日志时间戳计算 TypeError（int vs str）
+…（按上节模板填充）…
+4) 你的“小更新”任务
+- Mode: standard
+- Allowed Changes: playbooks/tests/verify_observability.yml
+- Forbidden Changes: playbooks/deploy-observability-stack.yml, templates/*
+- 目标：确保 `newest_entry_epoch/newest_entry_ns` 在参与计算/比较前均**作为整数**处理；
+- 交付：同一 PR 推送补丁。
+
+5) 验收
+- `TASK [Capture latest Loki entry per host]` **OK**（不再出现 TypeError）；
+- `TASK [Assert Loki has logs for required hosts]` **OK**；
+- 工件：`artifacts/itest/ctrl-linux-01_loki_host_summary.json` **包含 ctrl-linux-01 与 ws-01-linux**。
+```
+
+### 7.2 Diagnostic‑First（示例：Alloy 崩溃待取证）
+```markdown
+Title: [修正 V3.8 Part 2] 诊断失败：未收集 alloy.service 的崩溃日志
+…
+4) 你的“小更新”任务
+- Mode: diagnostic
+- Allowed Changes: playbooks/tests/tasks/verify_required_service.yaml
+- Forbidden Changes: playbooks/deploy-observability-stack.yml, templates/*
+- 目标：通用化 rescue：对**任意**失败的 `required_service.unit` 收集 `journalctl` 并落盘：
+  `artifacts/itest/{{ inventory_hostname }}_{{ required_service.unit }}_journal.log`
+- 交付：同一 PR 推送补丁。
+
+5) 验收
+- CI 仍可红，但**必须**出现上述新工件文件；后续据此切换到 Standard Fix。
+```
+
+### 7.3 Acceptance Relaxation（示例：暂降到“非空断言”）
+```markdown
+Title: [修正 V3.7 Part 5] 验收下调：Loki 仅验证“返回非空”
+…
+4) 你的“小更新”任务
+- Mode: relaxation
+- Allowed Changes: playbooks/tests/verify_observability.yml
+- 目标：以 `data.result | length > 0` 作为临时断言，解锁首次全绿；
+- 交付：同一 PR 推送补丁，并在 PCR 中记录“偏差 & 回补计划（V3.8）”。
+```
+
+---
+
+## 8. 与 PCR（PR Close Review）的关系
+- **PCR 记录**：若采用 `relaxation`，必须标注 `ACCEPT_WITH_DEVIATION` 与**回补 Issue**；
+- **PCR 触发下一步**：依据 Gap 表生成“下一 Issue 草案”，交给 Planner 审核。
+
+---
+
+## 9. 版本与变更
+- **v3.0**（本版）：全面接入 `Analyzer`（Step1/Step2）、一次过、三模式；补充模板与示例。
+- **v2.x**：早期版本（仅标准/诊断双模式，未对接 Analyzer）。
+
+---
+
+## 10. 附录：微更新中的 codex‑meta（建议）
+在 PR 描述或评论附上追踪块，方便机器人聚合：
+```md
+<!-- codex-meta v1
+task_id: MU-{短ID}
+domain: homeops
+iteration: {整数}
+network_mode: off
+-->
+```
