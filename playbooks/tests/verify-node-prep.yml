@@ -16,7 +16,7 @@
   become: true
   gather_facts: false
   vars:
-    gpu_verification_artifacts_dir: "{{ hostvars['localhost'].gpu_verification_artifacts_dir | default('artifacts/itest') }}"
+    gpu_verification_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
   tasks:
     - name: Execute nvidia-smi for verification
       ansible.builtin.command:
