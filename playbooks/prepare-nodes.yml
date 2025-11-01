@@ -31,7 +31,8 @@
     kernel_header_candidates: >-
       {{ [
           'linux-headers-' ~ kernel_release,
-          'linux-headers-' ~ kernel_release_base
+          'linux-headers-' ~ kernel_release_base,
+          'linux-headers-' ~ kernel_release_base ~ '-generic'
         ] | unique }}
     user_defined_kernel_headers: >-
       {{ nvidia_kernel_headers_package
