@@ -398,15 +398,6 @@
             mode: "0644"
           delegate_to: localhost
 
-    - name: Assert kernel headers provide module linker script
-      ansible.builtin.assert:
-        that:
-          - kernel_module_lds_generic.get('stat', {}).get('exists', false)
-            or kernel_module_lds_base.get('stat', {}).get('exists', false)
-        fail_msg: >-
-          Required kernel header linker script module.lds was not found after reinstalling
-          linux-headers for {{ kernel_release }}.
-
     - name: Blacklist nouveau kernel driver
       ansible.builtin.copy:
         dest: "{{ nouveau_blacklist_path }}"
@@ -434,6 +425,31 @@
       register: dpkg_postconfigure
       changed_when: false
       failed_when: dpkg_postconfigure.rc not in [0]
+
+    - name: Reboot node to synchronize kernel state
+      ansible.builtin.reboot:
+        msg: HomeOps GPU preparation reboot to finalize kernel updates
+        reboot_timeout: 1200
+        post_reboot_delay: 10
+
+    - name: Gather kernel header linker script status post reboot (generic)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release }}/scripts/module.lds"
+      register: kernel_module_lds_generic
+
+    - name: Gather kernel header linker script status post reboot (base release)
+      ansible.builtin.stat:
+        path: "/usr/src/linux-headers-{{ kernel_release_base }}/scripts/module.lds"
+      register: kernel_module_lds_base
+
+    - name: Assert kernel headers provide module linker script
+      ansible.builtin.assert:
+        that:
+          - kernel_module_lds_generic.get('stat', {}).get('exists', false)
+            or kernel_module_lds_base.get('stat', {}).get('exists', false)
+        fail_msg: >-
+          Required kernel header linker script module.lds was not found after reinstalling
+          linux-headers for {{ kernel_release }}.
 
     - name: Ensure nvidia-persistenced service is enabled
       ansible.builtin.systemd:
@@ -469,12 +485,6 @@
       retries: 3
       delay: 10
       until: nvidia_smi_check.rc == 0
-
-    - name: Reboot node to synchronize kernel state
-      ansible.builtin.reboot:
-        msg: HomeOps GPU preparation reboot to finalize kernel updates
-        reboot_timeout: 1200
-        post_reboot_delay: 10
 
 
     - name: Restore kernel package holds after GPU preparation
