@@ -74,6 +74,105 @@
       changed_when: false
       failed_when: dpkg_preconfigure.rc not in [0]
   tasks:
+    - name: Collect kernel state snapshot for diagnostics
+      block:
+        - name: Capture running kernel release
+          ansible.builtin.command:
+            cmd: uname -r
+          register: kernel_uname_r
+          changed_when: false
+          failed_when: false
+
+        - name: Persist running kernel release artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_uname-r.log"
+            content: |-
+              Command: uname -r
+              Return code: {{ kernel_uname_r.rc }}
+              --- stdout ---
+              {{ kernel_uname_r.stdout | default('') }}
+              {% if kernel_uname_r.stderr is defined and kernel_uname_r.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_uname_r.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture installed kernel images
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-image-'
+          args:
+            executable: /bin/bash
+          register: kernel_installed_images
+          changed_when: false
+          failed_when: false
+
+        - name: Persist installed kernel images artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_installed-kernels.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-image-'
+              Return code: {{ kernel_installed_images.rc }}
+              --- stdout ---
+              {{ kernel_installed_images.stdout | default('') }}
+              {% if kernel_installed_images.stderr is defined and kernel_installed_images.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_installed_images.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture installed kernel headers
+          ansible.builtin.shell: |
+            set -o pipefail
+            dpkg -l | grep 'linux-headers-'
+          args:
+            executable: /bin/bash
+          register: kernel_installed_headers
+          changed_when: false
+          failed_when: false
+
+        - name: Persist installed kernel headers artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_installed-headers.log"
+            content: |-
+              Command: dpkg -l | grep 'linux-headers-'
+              Return code: {{ kernel_installed_headers.rc }}
+              --- stdout ---
+              {{ kernel_installed_headers.stdout | default('') }}
+              {% if kernel_installed_headers.stderr is defined and kernel_installed_headers.stderr | length > 0 %}
+              --- stderr ---
+              {{ kernel_installed_headers.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture /usr/src directory listing
+          ansible.builtin.shell: |
+            set -o pipefail
+            ls -alR /usr/src
+          args:
+            executable: /bin/bash
+          register: usr_src_listing
+          changed_when: false
+          failed_when: false
+
+        - name: Persist /usr/src directory listing artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_usr-src-listing.log"
+            content: |-
+              Command: ls -alR /usr/src
+              Return code: {{ usr_src_listing.rc }}
+              --- stdout ---
+              {{ usr_src_listing.stdout | default('') }}
+              {% if usr_src_listing.stderr is defined and usr_src_listing.stderr | length > 0 %}
+              --- stderr ---
+              {{ usr_src_listing.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
     - name: Check if broken NVIDIA modules package is installed
       ansible.builtin.command:
         cmd: dpkg-query -W -f='${Status}' linux-modules-nvidia-550-6.14.0-29-generic
