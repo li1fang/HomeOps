@@ -164,6 +164,10 @@ artifacts/itest/：health.json, datasources.json, loki_query.json, journal_.log 
 
 Evidence 要求：Testing Done 中引用的每一项都必须能在提供的 run 或工件中找到对应项（包含文件名与行片段）。
 
+Gate2 失败自动取证：工作流 **Gate2 Artifact Retriever**（workflow_run 触发）会在 `HomeOps PR Quality Gates`
+run 结论为 failure 且 Gate2 job 掉线时自动拉取 `gate2-artifacts` 压缩包，并在新 run 中重新上传
+`gate2-artifacts-<run_id>/*.zip`，作为诊断回合的唯一可信归档。
+
 Ⅶ. 编写 Issue / 作业单的最佳实践（简明清单）
 
 标题一句话清晰；Summary 2–3 句说明为什么重要。
