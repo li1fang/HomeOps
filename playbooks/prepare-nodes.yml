@@ -52,6 +52,11 @@
           kernel_header_packages
         ) | unique }}
     nouveau_blacklist_path: "{{ nvidia_blacklist_file | default('/etc/modprobe.d/blacklist-nouveau.conf') }}"
+    kernel_hold_targets:
+      - "linux-image-{{ kernel_release }}"
+      - "linux-headers-{{ kernel_release }}"
+      - "linux-modules-{{ kernel_release }}"
+      - "linux-modules-extra-{{ kernel_release }}"
   pre_tasks:
     - name: Assert supported operating system family
       ansible.builtin.assert:
@@ -66,6 +71,26 @@
         enabled: false
         state: stopped
       when: ansible_service_mgr == 'systemd'
+
+    - name: Capture currently held packages
+      ansible.builtin.command:
+        cmd: apt-mark showhold
+      register: apt_mark_showhold
+      changed_when: false
+      failed_when: apt_mark_showhold.rc not in [0]
+
+    - name: Identify held kernel packages for running release
+      ansible.builtin.set_fact:
+        held_kernel_packages_before: "{{ (kernel_hold_targets | intersect(apt_mark_showhold.stdout_lines | default([]))) | to_json | from_json }}"
+
+    - name: Unlock held kernel packages for GPU preparation
+      ansible.builtin.command:
+        cmd: "apt-mark unhold {{ item }}"
+      loop: "{{ held_kernel_packages_before | default([]) }}"
+      register: kernel_unhold_results
+      changed_when: held_kernel_packages_before | length > 0
+      failed_when: kernel_unhold_results is failed
+      when: held_kernel_packages_before | length > 0
 
     - name: Ensure dpkg is in a consistent state before installing packages
       ansible.builtin.command:
@@ -444,6 +469,15 @@
       retries: 3
       delay: 10
       until: nvidia_smi_check.rc == 0
+
+    - name: Restore kernel package holds after GPU preparation
+      ansible.builtin.command:
+        cmd: "apt-mark hold {{ item }}"
+      loop: "{{ held_kernel_packages_before | default([]) }}"
+      register: kernel_rehold_results
+      changed_when: held_kernel_packages_before | length > 0
+      failed_when: kernel_rehold_results is failed
+      when: held_kernel_packages_before | length > 0
 
   handlers:
     - name: Rebuild initramfs after nouveau blacklist
