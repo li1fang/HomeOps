@@ -1,0 +1,135 @@
+---
+name: "Gate2 Artifact Retriever"
+
+'on':
+  workflow_run:
+    workflows:
+      - "HomeOps PR Quality Gates"
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  fetch-gate2-artifacts:
+    name: "Retrieve Gate2 artifacts when Gate2 fails"
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect Gate2 job status
+        id: gate2-status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.payload.workflow_run.id;
+            const attempt = context.payload.workflow_run.run_attempt;
+            const { data } = await github.rest.actions.listJobsForWorkflowRunAttempt({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+              attempt_number: attempt,
+              per_page: 100,
+            });
+            const gate2Job = data.jobs.find((job) => job.name === 'Gate2 (self-hosted) — deploy & verify');
+            if (!gate2Job) {
+              core.warning('Gate2 job not found in workflow run; skipping artifact retrieval.');
+              core.setOutput('should_download', 'false');
+              return;
+            }
+            const conclusion = gate2Job.conclusion || gate2Job.status;
+            core.info(`Gate2 job conclusion: ${conclusion}`);
+            const shouldDownload = conclusion === 'failure';
+            core.setOutput('should_download', shouldDownload ? 'true' : 'false');
+            core.setOutput('gate2_job_url', gate2Job.html_url || '');
+            core.setOutput('gate2_conclusion', conclusion);
+      - name: Gate2 job succeeded — nothing to download
+        if: ${{ steps.gate2-status.outputs.should_download != 'true' }}
+        run: |
+          echo "Gate2 job did not fail; no artifacts will be retrieved."
+      - name: List Gate2 artifacts
+        id: list-artifacts
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.payload.workflow_run.id;
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId,
+              per_page: 100,
+            });
+            const gate2Artifacts = artifacts.data.artifacts.filter((artifact) => /gate2/i.test(artifact.name));
+            core.info(`Found ${gate2Artifacts.length} Gate2 artifact(s).`);
+            core.setOutput('artifact_count', String(gate2Artifacts.length));
+            core.setOutput('artifacts', JSON.stringify(gate2Artifacts.map((artifact) => ({
+              id: artifact.id,
+              name: artifact.name,
+              size_in_bytes: artifact.size_in_bytes,
+              url: artifact.archive_download_url,
+            }))));
+      - name: No Gate2 artifacts uploaded in source run
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' && steps.list-artifacts.outputs.artifact_count == '0' }}
+        run: |
+          echo "No Gate2 artifacts were published by the source run. Skipping download."
+      - name: Download Gate2 artifact archives
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' && steps.list-artifacts.outputs.artifact_count != '0' }}
+        uses: actions/github-script@v7
+        env:
+          ARTIFACTS_JSON: ${{ steps.list-artifacts.outputs.artifacts }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const artifacts = JSON.parse(process.env.ARTIFACTS_JSON || '[]');
+            if (!artifacts.length) {
+              core.info('No artifacts to download.');
+              return;
+            }
+            const outputDir = path.join(process.cwd(), 'retrieved-artifacts');
+            fs.mkdirSync(outputDir, { recursive: true });
+            for (const artifact of artifacts) {
+              const response = await github.request(`GET ${artifact.url}`, {
+                headers: {
+                  accept: 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': '2022-11-28',
+                },
+                request: {
+                  decompress: false,
+                },
+              });
+              const filePath = path.join(outputDir, `${artifact.name}.zip`);
+              const buffer = Buffer.from(response.data);
+              fs.writeFileSync(filePath, buffer);
+              core.info(`Saved ${filePath} (${buffer.length} bytes)`);
+            }
+      - name: Display downloaded archives
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' && steps.list-artifacts.outputs.artifact_count != '0' }}
+        run: |
+          ls -l retrieved-artifacts
+      - name: Upload retrieved Gate2 archives
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' && steps.list-artifacts.outputs.artifact_count != '0' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate2-artifacts-${{ github.event.workflow_run.id }}
+          path: retrieved-artifacts
+          if-no-files-found: error
+      - name: Summarize retrieval
+        if: ${{ steps.gate2-status.outputs.should_download == 'true' }}
+        run: |
+          {
+            echo "### Gate2 artifact retrieval";
+            echo "- Source run: [${{ github.event.workflow_run.html_url }}](${{ github.event.workflow_run.html_url }})";
+            echo "- Gate2 job status: ${{ steps.gate2-status.outputs.gate2_conclusion }}";
+            if [ "${{ steps.list-artifacts.outputs.artifact_count }}" != "0" ]; then
+              echo "- Retrieved archives:";
+              for file in retrieved-artifacts/*.zip; do
+                echo "  - $(basename "$file")";
+              done;
+            else
+              echo "- Retrieved archives: (none)";
+            fi;
+          } >> "$GITHUB_STEP_SUMMARY"

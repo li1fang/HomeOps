@@ -169,6 +169,15 @@ sequenceDiagram
 
 ---
 
+## 📦 Gate2 Artifact 自动取证
+
+- 新增工作流 **Gate2 Artifact Retriever**（`.github/workflows/gate2-artifact-retriever.yml`）。
+- 触发条件：`HomeOps PR Quality Gates` workflow_run 完成且总体结论为 failure，并且 Gate2 job 失败。
+- 行为：自动调用 GitHub Actions API 拉取源 run 的 `gate2-artifacts` 压缩包，并在本次 run 中重新上传到
+  `gate2-artifacts-<run_id>/`，方便后续诊断回合直接引用。
+
+---
+
 ## 🧰 常见问题（Troubleshooting）
 
 - **“waiting for a runner to pick up this job…”**  
