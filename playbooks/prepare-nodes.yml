@@ -74,6 +74,24 @@
       changed_when: false
       failed_when: dpkg_preconfigure.rc not in [0]
   tasks:
+    - name: Break dpkg dependency loop by removing broken NVIDIA modules package
+      block:
+        - name: Check if linux-modules-nvidia package is installed
+          ansible.builtin.command:
+            cmd: dpkg-query -W -f='${Status}' linux-modules-nvidia-550-6.14.0-29-generic
+          register: nvidia_modules_status
+          changed_when: false
+          failed_when: false
+
+        - name: Force remove broken linux-modules-nvidia package
+          ansible.builtin.command:
+            cmd: dpkg --remove --force-depends linux-modules-nvidia-550-6.14.0-29-generic
+          register: nvidia_modules_force_remove
+          changed_when: "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
+          when:
+            - nvidia_modules_status.rc == 0
+            - "'install ok installed' in (nvidia_modules_status.stdout | default(''))"
+
     - name: Update apt cache for GPU prerequisites
       ansible.builtin.apt:
         update_cache: true
