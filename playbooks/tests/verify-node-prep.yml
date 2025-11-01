@@ -1,0 +1,46 @@
+---
+- name: Ensure GPU verification artifact directory exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    gpu_verification_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Ensure GPU verification artifact directory
+      ansible.builtin.file:
+        path: "{{ gpu_verification_artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+- name: Verify GPU node preparation
+  hosts: gpu_nodes
+  become: true
+  gather_facts: false
+  vars:
+    gpu_verification_artifacts_dir: "{{ hostvars['localhost'].gpu_verification_artifacts_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Execute nvidia-smi for verification
+      ansible.builtin.command:
+        cmd: nvidia-smi
+      register: nvidia_smi_result
+      changed_when: false
+
+    - name: Persist nvidia-smi output artifact
+      ansible.builtin.copy:
+        dest: "{{ gpu_verification_artifacts_dir }}/{{ inventory_hostname }}_nvidia-smi_output.txt"
+        content: |-
+          {{ nvidia_smi_result.stdout | default('') }}
+          {% if nvidia_smi_result.stderr is defined and nvidia_smi_result.stderr | length > 0 %}
+          --- stderr ---
+          {{ nvidia_smi_result.stderr }}
+          {% endif %}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Assert nvidia-smi reported driver version
+      ansible.builtin.assert:
+        that:
+          - nvidia_smi_result.stdout is defined
+          - nvidia_smi_result.stdout | length > 0
+          - "'Driver Version:' in nvidia_smi_result.stdout"
+        fail_msg: >-
+          nvidia-smi output did not contain the expected Driver Version banner on {{ inventory_hostname }}.

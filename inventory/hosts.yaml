@@ -42,3 +42,7 @@ all:
           ansible_user: whip_a
           ansible_connection: ssh
           ansible_port: 22
+
+    gpu_nodes:
+      hosts:
+        ws-01-linux:

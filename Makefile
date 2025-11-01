@@ -72,7 +72,9 @@ itest: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@$(MAKE) setup
 	@mkdir -p $(ART_ITEST_ABS)
 	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/deploy-observability-stack.yml
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/prepare-nodes.yml -e output_dir='$(ART_ITEST_ABS)'
 	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify_observability.yml -e output_dir='$(ART_ITEST_ABS)'
+	@$(ANSIBLE_PLAYBOOK) -i $(INVENTORY) playbooks/tests/verify-node-prep.yml -e output_dir='$(ART_ITEST_ABS)'
 
 deploy: $(VENV_MARKER) $(COLLECTIONS_MARKER)
 	@echo "--- Deploy (conditional) ---"

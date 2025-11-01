@@ -1,0 +1,119 @@
+---
+- name: Ensure GPU preparation artifact directory exists
+  hosts: localhost
+  gather_facts: false
+  vars:
+    gpu_prep_artifacts_dir: "{{ output_dir | default('artifacts/itest') }}"
+  tasks:
+    - name: Ensure GPU preparation artifact directory
+      ansible.builtin.file:
+        path: "{{ gpu_prep_artifacts_dir }}"
+        state: directory
+        mode: "0755"
+
+- name: Prepare GPU nodes for Kubernetes and CUDA baseline
+  hosts: gpu_nodes
+  become: true
+  gather_facts: true
+  vars:
+    nvidia_prereq_packages_default:
+      - build-essential
+      - dkms
+      - gcc
+      - make
+      - pciutils
+      - curl
+      - software-properties-common
+      - ca-certificates
+    gpu_prereq_packages: >-
+      {{ (
+          (nvidia_prereq_packages | default(nvidia_prereq_packages_default)) +
+          [nvidia_kernel_headers_package | default('linux-headers-' ~ ansible_kernel)]
+        ) | unique }}
+    nouveau_blacklist_path: "{{ nvidia_blacklist_file | default('/etc/modprobe.d/blacklist-nouveau.conf') }}"
+  pre_tasks:
+    - name: Assert supported operating system family
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family | lower == 'debian'
+        fail_msg: >-
+          GPU preparation currently supports Debian/Ubuntu families only; detected {{ ansible_os_family }}.
+  tasks:
+    - name: Update apt cache for GPU prerequisites
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install GPU prerequisite packages
+      ansible.builtin.apt:
+        name: "{{ gpu_prereq_packages }}"
+        state: present
+        install_recommends: false
+
+    - name: Blacklist nouveau kernel driver
+      ansible.builtin.copy:
+        dest: "{{ nouveau_blacklist_path }}"
+        content: |
+          # Managed by HomeOps GPU preparation
+          blacklist nouveau
+          options nouveau modeset=0
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Rebuild initramfs after nouveau blacklist
+        - Remove nouveau kernel module if loaded
+
+    - name: Install NVIDIA driver package
+      ansible.builtin.apt:
+        name: "{{ nvidia_driver_package | default('nvidia-driver-535') }}"
+        state: present
+        update_cache: false
+
+    - name: Ensure nvidia-persistenced service is enabled
+      ansible.builtin.systemd:
+        name: nvidia-persistenced
+        state: started
+        enabled: true
+      register: nvidia_persistenced_state
+      failed_when: >-
+        nvidia_persistenced_state is failed and
+        (
+          'not found' not in (nvidia_persistenced_state.msg | default('') | lower)
+          and 'could not be found' not in (nvidia_persistenced_state.msg | default('') | lower)
+        )
+
+    - name: Gather lspci output for NVIDIA adapters
+      ansible.builtin.command:
+        cmd: lspci -nn
+      register: lspci_output
+      changed_when: false
+
+    - name: Assert NVIDIA GPU detected
+      ansible.builtin.assert:
+        that:
+          - "'NVIDIA' in lspci_output.stdout"
+        fail_msg: >-
+          No NVIDIA GPU detected on {{ inventory_hostname }}. lspci output stored in task result for diagnostics.
+
+    - name: Run nvidia-smi to validate driver readiness
+      ansible.builtin.command:
+        cmd: nvidia-smi
+      register: nvidia_smi_check
+      changed_when: false
+      retries: 3
+      delay: 10
+      until: nvidia_smi_check.rc == 0
+
+  handlers:
+    - name: Rebuild initramfs after nouveau blacklist
+      ansible.builtin.command:
+        cmd: update-initramfs -u
+      changed_when: true
+
+    - name: Remove nouveau kernel module if loaded
+      ansible.builtin.command:
+        cmd: modprobe -r nouveau
+      register: remove_nouveau
+      failed_when: remove_nouveau.rc not in [0, 1]
+      changed_when: remove_nouveau.rc == 0

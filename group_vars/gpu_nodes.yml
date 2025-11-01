@@ -1,0 +1,14 @@
+---
+# GPU node defaults for NVIDIA driver preparation
+nvidia_driver_package: nvidia-driver-535
+nvidia_prereq_packages:
+  - build-essential
+  - dkms
+  - gcc
+  - make
+  - pciutils
+  - curl
+  - software-properties-common
+  - ca-certificates
+nvidia_kernel_headers_package: "linux-headers-{{ ansible_kernel }}"
+nvidia_blacklist_file: /etc/modprobe.d/blacklist-nouveau.conf
