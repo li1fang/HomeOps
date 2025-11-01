@@ -233,10 +233,15 @@
       changed_when: false
       failed_when: dpkg_post_force_remove.rc not in [0]
 
+    - name: Clean apt package cache before GPU prerequisite installation  # noqa command-instead-of-module
+      ansible.builtin.command:
+        cmd: apt-get clean
+      register: apt_clean_cache
+      changed_when: false
+
     - name: Update apt cache for GPU prerequisites
       ansible.builtin.apt:
         update_cache: true
-        cache_valid_time: 3600
 
     - name: Install GPU prerequisite packages
       ansible.builtin.apt:
