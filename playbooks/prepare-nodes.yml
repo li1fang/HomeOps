@@ -274,6 +274,7 @@
         state: present
         install_recommends: false
         force_apt_get: true
+      register: gpu_prereq_install
 
     - name: Gather kernel header linker script status (generic)
       ansible.builtin.stat:
@@ -411,6 +412,7 @@
       notify:
         - Rebuild initramfs after nouveau blacklist
         - Remove nouveau kernel module if loaded
+      register: nouveau_blacklist
 
     - name: Install NVIDIA driver package
       ansible.builtin.apt:
@@ -418,6 +420,20 @@
         state: present
         update_cache: false
         force_apt_get: true
+      register: nvidia_driver_install
+
+    - name: Determine if reboot is required
+      ansible.builtin.set_fact:
+        reboot_required: >-
+          {{ (
+              (purge_conflicting_kernels is defined and purge_conflicting_kernels is changed)
+              or (nvidia_modules_force_remove is defined and nvidia_modules_force_remove is changed)
+              or (gpu_prereq_install is defined and gpu_prereq_install is changed)
+              or (purge_kernel_headers is defined and purge_kernel_headers is changed)
+              or (reinstall_kernel_headers is defined and reinstall_kernel_headers is changed)
+              or (nouveau_blacklist is defined and nouveau_blacklist is changed)
+              or (nvidia_driver_install is defined and nvidia_driver_install is changed)
+            ) | bool }}
 
     - name: Configure remaining packages after driver installation
       ansible.builtin.command:
@@ -431,6 +447,7 @@
         msg: HomeOps GPU preparation reboot to finalize kernel updates
         reboot_timeout: 1200
         post_reboot_delay: 10
+      when: (reboot_required | default(false)) | bool
 
     - name: Gather kernel header linker script status post reboot (generic)
       ansible.builtin.stat:
