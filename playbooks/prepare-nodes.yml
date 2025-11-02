@@ -422,18 +422,55 @@
         force_apt_get: true
       register: nvidia_driver_install
 
+    - name: Aggregate GPU preparation change indicators
+      ansible.builtin.set_fact:
+        gpu_prep_change_map:
+          purge_conflicting_kernels: >-
+            {{ (purge_conflicting_kernels is defined and purge_conflicting_kernels is changed) | bool }}
+          nvidia_modules_force_remove: >-
+            {{ (nvidia_modules_force_remove is defined and nvidia_modules_force_remove is changed) | bool }}
+          gpu_prereq_install: >-
+            {{ (gpu_prereq_install is defined and gpu_prereq_install is changed) | bool }}
+          purge_kernel_headers: >-
+            {{ (purge_kernel_headers is defined and purge_kernel_headers is changed) | bool }}
+          reinstall_kernel_headers: >-
+            {{ (reinstall_kernel_headers is defined and reinstall_kernel_headers is changed) | bool }}
+          nouveau_blacklist: >-
+            {{ (nouveau_blacklist is defined and nouveau_blacklist is changed) | bool }}
+          nvidia_driver_install: >-
+            {{ (nvidia_driver_install is defined and nvidia_driver_install is changed) | bool }}
+
+    - name: Identify reboot trigger tasks
+      ansible.builtin.set_fact:
+        reboot_trigger_tasks: >-
+          {{ gpu_prep_change_map | default({})
+             | dict2items
+             | selectattr('value', 'truthy')
+             | map(attribute='key')
+             | list }}
+
     - name: Determine if reboot is required
       ansible.builtin.set_fact:
         reboot_required: >-
-          {{ (
-              (purge_conflicting_kernels is defined and purge_conflicting_kernels is changed)
-              or (nvidia_modules_force_remove is defined and nvidia_modules_force_remove is changed)
-              or (gpu_prereq_install is defined and gpu_prereq_install is changed)
-              or (purge_kernel_headers is defined and purge_kernel_headers is changed)
-              or (reinstall_kernel_headers is defined and reinstall_kernel_headers is changed)
-              or (nouveau_blacklist is defined and nouveau_blacklist is changed)
-              or (nvidia_driver_install is defined and nvidia_driver_install is changed)
-            ) | bool }}
+          {{ (reboot_trigger_tasks | default([]) | length) > 0 }}
+
+    - name: Persist reboot decision artifact
+      ansible.builtin.copy:
+        dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_reboot-decision.json"
+        content: |-
+          {{ {
+                'reboot_required': reboot_required | default(false) | bool,
+                'reboot_trigger_tasks': reboot_trigger_tasks | default([]),
+                'change_map': gpu_prep_change_map | default({})
+             } | to_nice_json }}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Report reboot decision summary
+      ansible.builtin.debug:
+        msg: >-
+          GPU preparation reboot_required={{ reboot_required | default(false) | bool }};
+          trigger_tasks={{ reboot_trigger_tasks | default([]) }}
 
     - name: Configure remaining packages after driver installation
       ansible.builtin.command:
