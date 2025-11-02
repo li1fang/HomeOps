@@ -99,6 +99,31 @@
       changed_when: false
       failed_when: dpkg_preconfigure.rc not in [0]
   tasks:
+    - name: Capture conflicting 6.14.0-29 kernel packages before purge
+      ansible.builtin.shell: |
+        set -o pipefail
+        dpkg -l | grep '6.14.0-29' || true
+      args:
+        executable: /bin/bash
+      register: purge_conflicting_kernels_before
+      changed_when: false
+      failed_when: false
+
+    - name: Persist pre-purge kernel package snapshot
+      ansible.builtin.copy:
+        dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_dpkg-query_BEFORE_purge.log"
+        content: |-
+          Command: dpkg -l | grep '6.14.0-29' || true
+          Return code: {{ purge_conflicting_kernels_before.rc }}
+          --- stdout ---
+          {{ purge_conflicting_kernels_before.stdout | default('') }}
+          {% if purge_conflicting_kernels_before.stderr is defined and purge_conflicting_kernels_before.stderr | length > 0 %}
+          --- stderr ---
+          {{ purge_conflicting_kernels_before.stderr }}
+          {% endif %}
+        mode: "0644"
+      delegate_to: localhost
+
     - name: Force purge conflicting 6.14.0-29 kernel packages
       ansible.builtin.shell: |
         set -o pipefail
@@ -118,6 +143,46 @@
       register: purge_conflicting_kernels
       changed_when: purge_conflicting_kernels.rc == 0 and 'Purging packages:' in (purge_conflicting_kernels.stdout | default(''))
       failed_when: purge_conflicting_kernels.rc not in [0]
+
+    - name: Persist kernel purge verbose output
+      ansible.builtin.copy:
+        dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_apt-purge_VERBOSE.log"
+        content: |-
+          Command: Force purge conflicting 6.14.0-29 kernel packages
+          Return code: {{ purge_conflicting_kernels.rc }}
+          --- stdout ---
+          {{ purge_conflicting_kernels.stdout | default('') }}
+          {% if purge_conflicting_kernels.stderr is defined and purge_conflicting_kernels.stderr | length > 0 %}
+          --- stderr ---
+          {{ purge_conflicting_kernels.stderr }}
+          {% endif %}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Capture conflicting 6.14.0-29 kernel packages after purge
+      ansible.builtin.shell: |
+        set -o pipefail
+        dpkg -l | grep '6.14.0-29' || true
+      args:
+        executable: /bin/bash
+      register: purge_conflicting_kernels_after
+      changed_when: false
+      failed_when: false
+
+    - name: Persist post-purge kernel package snapshot
+      ansible.builtin.copy:
+        dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_dpkg-query_AFTER_purge.log"
+        content: |-
+          Command: dpkg -l | grep '6.14.0-29' || true
+          Return code: {{ purge_conflicting_kernels_after.rc }}
+          --- stdout ---
+          {{ purge_conflicting_kernels_after.stdout | default('') }}
+          {% if purge_conflicting_kernels_after.stderr is defined and purge_conflicting_kernels_after.stderr | length > 0 %}
+          --- stderr ---
+          {{ purge_conflicting_kernels_after.stderr }}
+          {% endif %}
+        mode: "0644"
+      delegate_to: localhost
 
     - name: Reconfigure dpkg after kernel package purge
       ansible.builtin.command:
@@ -582,7 +647,9 @@
         msg: HomeOps GPU preparation reboot to finalize kernel updates
         reboot_timeout: 1200
         post_reboot_delay: 10
-      when: (reboot_required | default(false)) | bool
+      when:
+        - (reboot_required | default(false)) | bool
+        - false  # Issue #119 diagnostic: skip automatic reboot to avoid manual intervention
 
     - name: Gather kernel header linker script status post reboot (generic)
       ansible.builtin.stat:
