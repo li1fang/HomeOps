@@ -472,6 +472,104 @@
           GPU preparation reboot_required={{ reboot_required | default(false) | bool }};
           trigger_tasks={{ reboot_trigger_tasks | default([]) }}
 
+    - name: Collect boot-switching diagnostics
+      block:
+        - name: Capture verbose EFI boot entries  # noqa command-instead-of-module
+          ansible.builtin.command:
+            cmd: efibootmgr -v
+          register: efibootmgr_result
+          changed_when: false
+          failed_when:
+            - efibootmgr_result.rc != 0
+            - (efibootmgr_result.stdout | default('') | trim | length) == 0
+
+        - name: Persist EFI boot entries artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_efibootmgr.log"
+            content: |-
+              Command: efibootmgr -v
+              Return code: {{ efibootmgr_result.rc }}
+              --- stdout ---
+              {{ efibootmgr_result.stdout | default('') }}
+              {% if efibootmgr_result.stderr is defined and efibootmgr_result.stderr | length > 0 %}
+              --- stderr ---
+              {{ efibootmgr_result.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Read GRUB environment file  # noqa command-instead-of-module
+          ansible.builtin.command:
+            cmd: cat /boot/grub/grubenv
+          register: grubenv_result
+          changed_when: false
+          failed_when:
+            - grubenv_result.rc != 0
+            - (grubenv_result.stdout | default('') | trim | length) == 0
+
+        - name: Persist GRUB environment artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_grubenv.log"
+            content: |-
+              Source: /boot/grub/grubenv
+              Return code: {{ grubenv_result.rc }}
+              --- stdout ---
+              {{ grubenv_result.stdout | default('') }}
+              {% if grubenv_result.stderr is defined and grubenv_result.stderr | length > 0 %}
+              --- stderr ---
+              {{ grubenv_result.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Read GRUB default configuration file  # noqa command-instead-of-module
+          ansible.builtin.command:
+            cmd: cat /etc/default/grub
+          register: grub_default_result
+          changed_when: false
+          failed_when:
+            - grub_default_result.rc != 0
+            - (grub_default_result.stdout | default('') | trim | length) == 0
+
+        - name: Persist GRUB default configuration artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_grub_cfg_default.log"
+            content: |-
+              Source: /etc/default/grub
+              Return code: {{ grub_default_result.rc }}
+              --- stdout ---
+              {{ grub_default_result.stdout | default('') }}
+              {% if grub_default_result.stderr is defined and grub_default_result.stderr | length > 0 %}
+              --- stderr ---
+              {{ grub_default_result.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
+        - name: Capture EFI boot tree listing  # noqa command-instead-of-module
+          ansible.builtin.command:
+            cmd: ls -lR /boot/efi/EFI/
+          register: boot_efi_tree_result
+          changed_when: false
+          failed_when:
+            - boot_efi_tree_result.rc != 0
+            - (boot_efi_tree_result.stdout | default('') | trim | length) == 0
+
+        - name: Persist EFI boot tree artifact
+          ansible.builtin.copy:
+            dest: "{{ gpu_prep_artifacts_dir }}/{{ inventory_hostname }}_boot_efi_tree.log"
+            content: |-
+              Command: ls -lR /boot/efi/EFI/
+              Return code: {{ boot_efi_tree_result.rc }}
+              --- stdout ---
+              {{ boot_efi_tree_result.stdout | default('') }}
+              {% if boot_efi_tree_result.stderr is defined and boot_efi_tree_result.stderr | length > 0 %}
+              --- stderr ---
+              {{ boot_efi_tree_result.stderr }}
+              {% endif %}
+            mode: "0644"
+          delegate_to: localhost
+
     - name: Configure remaining packages after driver installation
       ansible.builtin.command:
         cmd: dpkg --configure -a
