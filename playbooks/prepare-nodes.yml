@@ -582,7 +582,7 @@
         msg: HomeOps GPU preparation reboot to finalize kernel updates
         reboot_timeout: 1200
         post_reboot_delay: 10
-      when: false  # Diagnostic guard for Issue #117 to prevent unintended reboot
+      when: (reboot_required | default(false)) | bool
 
     - name: Gather kernel header linker script status post reboot (generic)
       ansible.builtin.stat:
