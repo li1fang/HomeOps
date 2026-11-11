@@ -8,7 +8,7 @@ An earlier personal infrastructure project by **Yifang Li**, built around Ansibl
 
 [Read the engineering walkthrough](docs/showcase/README.md) · [Inspect the implementation](playbooks/tests/verify_observability.yml) · [历史中文操作指南](docs/history/OPERATING-GUIDE.zh-CN.md)
 
-![HomeOps: deploy services, check health, verify recent logs from each expected host, and retain diagnostic evidence. Architecture illustration.](docs/showcase/workflow.svg)
+![HomeOps: deploy services, check health, verify recent logs from each expected host, and retain diagnostic evidence. Architecture illustration.](docs/showcase/homeops-workflow.svg)
 
 ## From configuration to confidence
 

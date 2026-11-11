@@ -8,7 +8,7 @@ After deploying a logging stack, can every expected machine contribute recent lo
 
 HomeOps connected provisioning with checks that answer that question. This walkthrough explains the preserved implementation, using source reviewed at `d69d7c5` on November 11, 2026. The diagram is an architectural illustration, not a monitoring screenshot or a new run result.
 
-![Deployment, service health, per-host log verification, and diagnostic evidence.](workflow.svg)
+![Deployment, service health, per-host log verification, and diagnostic evidence.](homeops-workflow.svg)
 
 ## 01 / Establish the services
 
