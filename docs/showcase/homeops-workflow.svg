@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="780" viewBox="0 0 600 780" role="img" aria-labelledby="title desc">
+<title id="title">HomeOps — from deployment to evidence</title>
+<desc id="desc">Deploy Loki, Grafana and Alloy; check service health; verify host coverage and recent logs; retain diagnostic evidence.</desc>
+<rect width="600" height="780" rx="24" fill="#102c32"/>
+<g font-family="Segoe UI, Arial, sans-serif">
+<text x="32" y="48" fill="#9ddbc9" font-size="22" letter-spacing="2">HOMEOPS / WORKFLOW</text>
+<text x="32" y="100" fill="#ffffff" font-size="36" font-weight="700">From deployment</text>
+<text x="32" y="143" fill="#ffffff" font-size="36" font-weight="700">to evidence.</text>
+<path d="M65 220 V650" stroke="#6b9c9b" stroke-width="3"/>
+<g fill="#193b42" stroke="#3e646b"><rect x="32" y="182" width="536" height="114" rx="14"/><rect x="32" y="314" width="536" height="114" rx="14"/><rect x="32" y="446" width="536" height="114" rx="14"/><rect x="32" y="578" width="536" height="114" rx="14"/></g>
+<g fill="#a8e2cf" font-size="26" font-weight="700"><text x="50" y="220">01</text><text x="50" y="352">02</text><text x="50" y="484">03</text><text x="50" y="616">04</text></g>
+<g fill="#ffffff" font-size="30" font-weight="600"><text x="101" y="220">Deploy the stack</text><text x="101" y="352">Check service health</text><text x="101" y="484">Verify the data path</text><text x="101" y="616">Keep the evidence</text></g>
+<g fill="#c3d7da" font-size="26"><text x="101" y="263">Loki · Grafana · Alloy</text><text x="101" y="395">Services + endpoints</text><text x="101" y="527">Every host · recent logs</text><text x="101" y="659">Responses + diagnostics</text></g>
+<text x="32" y="741" fill="#a5c1c5" font-size="21">Architecture illustration · existing code</text>
+</g></svg>
