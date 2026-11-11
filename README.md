@@ -1,3 +1,28 @@
+# HomeOps
+
+**Repeatable infrastructure deployment and verification with Ansible.**
+
+HomeOps manages personal infrastructure using Ansible and GitHub Actions. It keeps configuration, deployment, service checks, and diagnostic artifacts together, so an operator can inspect how a change is applied and how its outcome is checked.
+
+## Explore the work
+
+| Start with | What you can inspect |
+| --- | --- |
+| [Observability deployment](playbooks/deploy-observability-stack.yml) | Deployment of Loki, Grafana and Alloy |
+| [Verification playbook](playbooks/tests/verify_observability.yml) | Service and log-query checks |
+| [Verification specification](docs/verification-spec.md) | Expected signals and acceptance criteria |
+| [Makefile](Makefile) | Setup, static checks, tests and deployment entry points |
+
+The deployment workflow targets the maintainer's inventory and self-hosted runner. Read the inventory and verification specification before running it; it is not a standalone public demo. Historical milestones below describe earlier work, not a fresh deployment result. Broader scheduling and service coverage remain roadmap items.
+
+**License:** currently unspecified (TBD). Public visibility does not grant an open-source license.
+
+[中文操作指南与历史里程碑](#中文操作指南与历史里程碑)
+
+---
+
+## 中文操作指南与历史里程碑
+
 # 🏠 HomeOps — Ansible 驱动的家庭运维自动化平台
 
 ![CI](https://github.com/li1fang/HomeOps/actions/workflows/pr-quality-check.yml/badge.svg?branch=main)
@@ -6,8 +31,8 @@
 ![Status](https://img.shields.io/badge/status-iterating-yellow)
 
 > **TL;DR**  
-> HomeOps 是一个面向个人/家庭基础设施的自动化平台：以 **Ansible** 为引擎、以 **GitHub Actions** 为流水线、以 **“金路径” Make 目标** 为契约，串起从开发 → 验证 → 部署 → 观测的全链路。  
-> 人类与 AI 统一走这 4 步：`make setup → make lint → make test → make itest(部署+验证) → (make deploy)`。
+> HomeOps 是一个面向个人/家庭基础设施的自动化平台：以 **Ansible** 为引擎、以 **GitHub Actions** 为流水线、以 **“金路径” Make 目标** 为契约，组织开发 → 验证 → 部署 → 观测的工作流。
+> 人类与 AI 使用以下入口（部署为条件步骤）：`make setup → make lint → make test → make itest(部署+验证) → (make deploy)`。
 > 机判口径唯一来源：`docs/verification-spec.md`。AI 指南：`AGENTS.md`。
 
 ---
